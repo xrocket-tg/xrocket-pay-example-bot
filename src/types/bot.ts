@@ -11,6 +11,8 @@ export interface SessionData {
     amount?: number;
     messageId?: number;
     invoiceId?: string;
+    transferAmount?: number;
+    recipientId?: number;
 }
 
 /**

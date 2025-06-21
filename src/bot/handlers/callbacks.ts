@@ -1,6 +1,6 @@
 import { UserService } from "../../services/user";
 import { BotContext } from "../../types/bot";
-import { createMainMenuKeyboard } from "../keyboards/main";
+import { createMainMenuKeyboard, createWithdrawMenuKeyboard } from "../keyboards/main";
 import { createCoinSelectionKeyboard } from "../keyboards/deposit";
 import { createInvoicesKeyboard } from "../keyboards/invoices";
 import { createInvoiceDetailKeyboard } from "../keyboards/invoices";
@@ -9,6 +9,7 @@ import { AppDataSource } from "../../config/database";
 import { UserInvoice } from "../../entities/user-invoice";
 import { XRocketPayService } from "../../services/xrocket-pay";
 import logger from "../../utils/logger";
+import { handleTransferFlow } from "../conversations/transfer";
 
 /**
  * Handles the main menu balance display
@@ -38,12 +39,17 @@ export async function handleMainMenu(ctx: BotContext): Promise<void> {
 }
 
 /**
- * Handles the withdraw button click (placeholder)
+ * Handles the withdraw button click (shows withdraw submenu)
  */
 export async function handleWithdraw(ctx: BotContext): Promise<void> {
-    await ctx.reply("💸 Withdraw functionality coming soon!", {
-        reply_markup: createMainMenuKeyboard()
-    });
+    await ctx.api.editMessageText(
+        ctx.chat!.id,
+        ctx.callbackQuery!.message!.message_id,
+        "💸 Choose withdrawal option:",
+        {
+            reply_markup: createWithdrawMenuKeyboard()
+        }
+    );
 }
 
 /**
@@ -267,7 +273,14 @@ export async function handleCheckPayment(ctx: BotContext): Promise<void> {
             logger.info('[HandleCheckPayment] Updating user balance');
             // Update user balance
             const userService = UserService.getInstance();
-            await userService.updateBalance(invoice.user, invoice.currency as any, invoice.amount);
+            const amountToAdd = parseFloat(invoice.amount.toString());
+            logger.info('[HandleCheckPayment] Amount details:', {
+                originalAmount: invoice.amount,
+                originalType: typeof invoice.amount,
+                parsedAmount: amountToAdd,
+                parsedType: typeof amountToAdd
+            });
+            await userService.updateBalance(invoice.user, invoice.currency as any, amountToAdd);
 
             logger.info('[HandleCheckPayment] Getting updated balances');
             // Show updated balance
@@ -336,4 +349,29 @@ export async function handleDeleteInvoice(ctx: BotContext): Promise<void> {
             reply_markup: createInvoicesKeyboard(result.invoices, result.allInvoices.length, 0)
         }
     );
+}
+
+/**
+ * Handles the transfer option in withdraw submenu
+ */
+export async function handleWithdrawTransfer(ctx: BotContext): Promise<void> {
+    await handleTransferFlow(ctx);
+}
+
+/**
+ * Handles the multicheque option in withdraw submenu (stub)
+ */
+export async function handleWithdrawMulticheque(ctx: BotContext): Promise<void> {
+    await ctx.reply("🧾 Multicheque functionality coming soon!", {
+        reply_markup: createWithdrawMenuKeyboard()
+    });
+}
+
+/**
+ * Handles the external wallet option in withdraw submenu (stub)
+ */
+export async function handleWithdrawExternal(ctx: BotContext): Promise<void> {
+    await ctx.reply("🌐 External wallet withdrawal coming soon!", {
+        reply_markup: createWithdrawMenuKeyboard()
+    });
 } 

@@ -1,5 +1,6 @@
 import { XRocketPayClient } from 'xrocket-pay-api-sdk';
 import { UserInvoice } from '../entities/user-invoice';
+import { UserTransfer } from '../entities/user-transfer';
 import { AppDataSource } from '../config/database';
 import { CurrencyConverter, InternalCurrency } from '../types/currency';
 
@@ -100,6 +101,78 @@ export class XRocketPayService {
         } catch (error) {
             console.error('Error deleting invoice:', error);
             throw error;
+        }
+    }
+
+    /**
+     * Creates a transfer between users
+     */
+    public async createTransfer(userTransfer: UserTransfer): Promise<{ transferId: string }> {
+        try {
+            // Validate input
+            if (!userTransfer.amount || userTransfer.amount <= 0) {
+                throw new Error('Invalid transfer amount');
+            }
+
+            if (!userTransfer.recipientTelegramId || userTransfer.recipientTelegramId <= 0) {
+                throw new Error('Invalid recipient Telegram ID');
+            }
+
+            if (!userTransfer.currency) {
+                throw new Error('Invalid currency');
+            }
+
+            // Convert internal currency to external currency for XRocket Pay API
+            const externalCurrency = CurrencyConverter.toExternal(userTransfer.currency as InternalCurrency);
+            
+            const response = await this.client.createTransfer({
+                amount: userTransfer.amount,
+                currency: externalCurrency,
+                tgUserId: userTransfer.recipientTelegramId,
+                transferId: userTransfer.id.toString(),
+                description: `Transfer from ${userTransfer.sender.username || userTransfer.sender.telegramId}`
+            });
+
+            if (!response.success || !response.data) {
+                throw new Error('Failed to create transfer');
+            }
+
+            // Update transfer with transfer ID
+            const transferRepo = AppDataSource.getRepository(UserTransfer);
+            await transferRepo.update(userTransfer.id, {
+                transferId: response.data.id.toString()
+            });
+
+            return {
+                transferId: response.data.id.toString()
+            };
+        } catch (error) {
+            console.error('Error creating transfer:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Validates if a Telegram ID exists and is valid
+     */
+    public async validateTelegramId(telegramId: number): Promise<boolean> {
+        try {
+            // This is a placeholder - in a real implementation, you might want to
+            // check if the user exists in your database or validate through Telegram API
+            if (!telegramId || telegramId <= 0) {
+                return false;
+            }
+
+            // Telegram IDs can be 1-15 digits
+            const telegramIdStr = telegramId.toString();
+            if (telegramIdStr.length < 1 || telegramIdStr.length > 15) {
+                return false;
+            }
+
+            return true;
+        } catch (error) {
+            console.error('Error validating Telegram ID:', error);
+            return false;
         }
     }
 } 

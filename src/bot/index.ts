@@ -2,8 +2,9 @@ import { Bot, session } from "grammy";
 import { BotContext } from "../types/bot";
 import { AppDataSource } from "../config/database";
 import { handleStart } from "./handlers/commands";
-import { handleBalance, handleCheckPayment, handleInvoices, handleInvoiceDetail, handleInvoicePagination, handleDeleteInvoice, handleMainMenu, handleWithdraw, handleMyWithdrawals } from "./handlers/callbacks";
+import { handleBalance, handleCheckPayment, handleInvoices, handleInvoiceDetail, handleInvoicePagination, handleDeleteInvoice, handleMainMenu, handleWithdraw, handleMyWithdrawals, handleWithdrawTransfer, handleWithdrawMulticheque, handleWithdrawExternal } from "./handlers/callbacks";
 import { handleDepositFlow, handleCurrencySelection, handleAmountInput } from "./conversations/deposit";
+import { handleTransferFlow, handleTransferCurrencySelection, handleTransferAmountInput, handleTransferRecipientInput, handleTransferConfirmation } from "./conversations/transfer";
 import * as dotenv from 'dotenv';
 
 dotenv.config();
@@ -26,6 +27,9 @@ bot.callbackQuery("my_invoices", handleInvoices);
 bot.callbackQuery("main_menu", handleMainMenu);
 bot.callbackQuery("withdraw", handleWithdraw);
 bot.callbackQuery("my_withdrawals", handleMyWithdrawals);
+bot.callbackQuery("withdraw_transfer", handleWithdrawTransfer);
+bot.callbackQuery("withdraw_multicheque", handleWithdrawMulticheque);
+bot.callbackQuery("withdraw_external", handleWithdrawExternal);
 bot.callbackQuery(/^invoice_/, handleInvoiceDetail);
 bot.callbackQuery(/^check_payment_/, handleCheckPayment);
 bot.callbackQuery(/^delete_invoice_/, handleDeleteInvoice);
@@ -33,10 +37,22 @@ bot.callbackQuery(/^invoices_page_/, handleInvoicePagination);
 
 // Register deposit flow handlers
 bot.callbackQuery(/^coin_/, handleCurrencySelection);
+
+// Register transfer flow handlers
+bot.callbackQuery(/^transfer_coin_/, handleTransferCurrencySelection);
+bot.callbackQuery("confirm_transfer", handleTransferConfirmation);
 bot.on("message:text", async (ctx) => {
     // Handle amount input for deposit flow
     if (ctx.session.step === "deposit_amount") {
         await handleAmountInput(ctx);
+    }
+    // Handle amount input for transfer flow
+    else if (ctx.session.step === "transfer_amount") {
+        await handleTransferAmountInput(ctx);
+    }
+    // Handle recipient input for transfer flow
+    else if (ctx.session.step === "transfer_recipient") {
+        await handleTransferRecipientInput(ctx);
     }
 });
 
