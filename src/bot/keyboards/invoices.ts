@@ -6,16 +6,16 @@ import { formatNumber } from "../utils/formatters";
 /**
  * Creates keyboard for invoice list with pagination
  */
-export function createInvoicesKeyboard(invoices: UserInvoice[], page: number = 0, pageSize: number = 5, totalCount: number = 0): InlineKeyboard {
+export function createInvoicesKeyboard(invoices: UserInvoice[], totalCount: number = 0, page: number = 0): InlineKeyboard {
     const keyboard = new InlineKeyboard();
     
     // Add invoice buttons
     invoices.forEach((invoice, index) => {
         const currencyConfig = CurrencyConverter.getConfig(invoice.currency as InternalCurrency);
         const status = getStatusEmoji(invoice.status);
-        const buttonText = `${status} ${currencyConfig.emoji} ${formatNumber(invoice.amount)} ${currencyConfig.name} (ID: ${invoice.invoiceId || 'N/A'})`;
+        const buttonText = `${status} ${currencyConfig.emoji} ${formatNumber(invoice.amount)} ${currencyConfig.name} (ID: ${invoice.id})`;
         
-        keyboard.text(buttonText, `invoice_${invoice.invoiceId}`);
+        keyboard.text(buttonText, `invoice_${invoice.id}`);
         
         // Add new row for each invoice (except last one)
         if (index < invoices.length - 1) {
@@ -24,6 +24,7 @@ export function createInvoicesKeyboard(invoices: UserInvoice[], page: number = 0
     });
     
     // Add pagination controls if needed
+    const pageSize = 5;
     const totalPages = Math.ceil(totalCount / pageSize);
     if (totalPages > 1) {
         keyboard.row();
@@ -55,13 +56,13 @@ export function createInvoiceDetailKeyboard(invoice: UserInvoice): InlineKeyboar
     if (invoice.paymentUrl && invoice.status === 'active') {
         keyboard.url("💳 Pay Now", invoice.paymentUrl);
         keyboard.row();
-        keyboard.text("🔄 Check Payment", `check_payment_${invoice.invoiceId}`);
+        keyboard.text("🔄 Check Payment", `check_payment_${invoice.id}`);
         keyboard.row();
     }
     
     // Add delete button for non-paid invoices (including expired)
     if (invoice.status !== 'paid') {
-        keyboard.text("🗑️ Delete Invoice", `delete_invoice_${invoice.invoiceId}`);
+        keyboard.text("🗑️ Delete Invoice", `delete_invoice_${invoice.id}`);
         keyboard.row();
     }
     

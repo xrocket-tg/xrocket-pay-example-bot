@@ -5,11 +5,9 @@ import { createCoinSelectionKeyboard } from "../keyboards/deposit";
 import { createMainMenuKeyboard } from "../keyboards/main";
 import { formatNumber } from "../utils/formatters";
 import { UserService } from "../../services/user";
-import { formatInvoiceDetailMessage } from "../utils/user";
 import { CURRENCIES, CurrencyConverter, InternalCurrency } from "../../types/currency";
 import { InlineKeyboard } from "grammy";
 import { XRocketPayService } from "../../services/xrocket-pay";
-import { handleInvoiceDetail } from "../handlers/callbacks";
 import logger from '../../utils/logger';
 import { createInvoiceDetailKeyboard } from "../keyboards/invoices";
 
@@ -157,7 +155,7 @@ export async function handleAmountInput(ctx: BotContext): Promise<void> {
 
     // Show invoice details
     logger.info('[Deposit] Showing invoice details');
-    const detailMessage = formatInvoiceDetailMessage(invoice);
+    const detailMessage = userService.formatInvoiceDetailMessage(invoice);
     await ctx.reply(detailMessage, { reply_markup: createInvoiceDetailKeyboard(invoice) });
     logger.info('[Deposit] Deposit flow completed');
 } 

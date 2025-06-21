@@ -1,5 +1,4 @@
 import { BotContext } from "../../types/bot";
-import { displayBalance } from "../utils/user";
 import { UserService } from "../../services/user";
 import { AppDataSource } from "../../config/database";
 import { UserInvoice } from "../../entities/user-invoice";
@@ -8,7 +7,7 @@ import { createInvoiceDetailKeyboard } from "../keyboards/invoices";
 import logger from '../../utils/logger';
 
 /**
- * Start command handler
+ * Handles the /start command
  */
 export async function handleStart(ctx: BotContext): Promise<void> {
     const userService = UserService.getInstance();
@@ -40,5 +39,5 @@ export async function handleStart(ctx: BotContext): Promise<void> {
     }
     
     // Default behavior - show balance
-    await displayBalance(ctx, user);
+    await userService.displayBalance(ctx, user);
 } 

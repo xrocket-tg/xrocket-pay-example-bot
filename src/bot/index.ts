@@ -2,8 +2,8 @@ import { Bot, session } from "grammy";
 import { BotContext } from "../types/bot";
 import { AppDataSource } from "../config/database";
 import { handleStart } from "./handlers/commands";
-import { handleDeposit, handleBalance, handleCheckPayment, handleInvoices, handleInvoiceDetail, handleInvoicePagination, handleDeleteInvoice, handleMainMenu, handleWithdraw, handleMyWithdrawals } from "./handlers/callbacks";
-import { handleCurrencySelection, handleAmountInput } from "./conversations/deposit";
+import { handleBalance, handleCheckPayment, handleInvoices, handleInvoiceDetail, handleInvoicePagination, handleDeleteInvoice, handleMainMenu, handleWithdraw, handleMyWithdrawals } from "./handlers/callbacks";
+import { handleDepositFlow, handleCurrencySelection, handleAmountInput } from "./conversations/deposit";
 import * as dotenv from 'dotenv';
 
 dotenv.config();
@@ -20,7 +20,7 @@ bot.use(session({ initial: () => ({}) }));
 bot.command("start", handleStart);
 
 // Register callback handlers
-bot.callbackQuery("deposit", handleDeposit);
+bot.callbackQuery("deposit", handleDepositFlow);
 bot.callbackQuery("balance", handleBalance);
 bot.callbackQuery("my_invoices", handleInvoices);
 bot.callbackQuery("main_menu", handleMainMenu);

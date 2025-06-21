@@ -431,6 +431,7 @@ This document outlines the step-by-step implementation plan for the Telegram bot
 2. Verify existing functionality still works
 3. Test edge cases and error conditions
 4. Document any issues found
+5. **Commit successful changes to git with descriptive message**
 
 ### Manual Testing Checklist for Each Feature:
 - [ ] Happy path testing (normal usage)
@@ -440,6 +441,7 @@ This document outlines the step-by-step implementation plan for the Telegram bot
 - [ ] UI/UX flow testing
 - [ ] Integration with existing features
 - [ ] Performance testing (response times)
+- [ ] **Git commit with descriptive message**
 
 ## Progress Tracking
 
@@ -495,4 +497,6 @@ This document outlines the step-by-step implementation plan for the Telegram bot
 - Manual testing is required for each step
 - Progress will only continue after confirmation that current step is working
 - Database migrations should be run after each entity creation
-- Error handling should be comprehensive for each feature 
+- Error handling should be comprehensive for each feature
+- **Git commit after every successful step with descriptive commit message**
+- **Commit message should include step number and brief description of changes** 

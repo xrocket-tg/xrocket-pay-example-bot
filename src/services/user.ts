@@ -1,8 +1,12 @@
 import { AppDataSource } from "../config/database";
 import { User } from "../entities/user";
 import { UserBalance } from "../entities/user-balance";
+import { UserInvoice } from "../entities/user-invoice";
 import { BotContext } from "../types/bot";
-import { InternalCurrency } from "../types/currency";
+import { InternalCurrency, CURRENCIES, CurrencyConverter } from "../types/currency";
+import { formatNumber } from "../bot/utils/formatters";
+import { createMainMenuKeyboard } from "../bot/keyboards/main";
+import { DataSource } from "typeorm";
 
 export class UserService {
     private static instance: UserService;
@@ -80,14 +84,20 @@ export class UserService {
      * @param user - The user instance
      * @param currency - The currency to update
      * @param amount - The amount to add/subtract (positive for add, negative for subtract)
+     * @param manager - Optional transaction manager
      * @returns The updated balance instance
      */
-    public async updateBalance(user: User, currency: InternalCurrency, amount: number): Promise<UserBalance> {
+    public async updateBalance(
+        user: User, 
+        currency: InternalCurrency, 
+        amount: number, 
+        manager?: DataSource
+    ): Promise<UserBalance> {
         if (typeof amount !== 'number' || isNaN(amount)) {
             throw new Error("Invalid amount provided");
         }
 
-        const balanceRepo = AppDataSource.getRepository(UserBalance);
+        const balanceRepo = manager ? manager.getRepository(UserBalance) : AppDataSource.getRepository(UserBalance);
         let balance = await this.getUserBalance(user, currency);
         
         if (!balance) {
@@ -131,5 +141,123 @@ export class UserService {
         }
         
         return await balanceRepo.save(balance);
+    }
+
+    /**
+     * Formats user balance into a display message
+     * @param balances - Array of user balances
+     * @returns Formatted balance message
+     */
+    public formatBalanceMessage(balances: UserBalance[]): string {
+        let message = "💰 Your balance:\n";
+        if (balances.length === 0) {
+            message += "No balances yet";
+        } else {
+            balances.forEach(balance => {
+                const currencyConfig = CurrencyConverter.getConfig(balance.coin as InternalCurrency);
+                message += `${currencyConfig.emoji} ${currencyConfig.name}: ${formatNumber(balance.amount)}\n`;
+            });
+        }
+        return message;
+    }
+
+    /**
+     * Gets user invoices with pagination
+     * @param user - The user instance
+     * @param page - Page number (0-based)
+     * @param pageSize - Number of items per page
+     * @returns Object with invoices, pagination info, and message
+     */
+    public async getUserInvoicesWithPagination(
+        user: User, 
+        page: number = 0, 
+        pageSize: number = 5
+    ): Promise<{
+        invoices: UserInvoice[];
+        allInvoices: UserInvoice[];
+        page: number;
+        pageSize: number;
+        startIndex: number;
+        endIndex: number;
+        message: string;
+    }> {
+        const invoiceRepo = AppDataSource.getRepository(UserInvoice);
+        const allInvoices = await invoiceRepo.find({ 
+            where: { user: { id: user.id } },
+            order: { createdAt: 'DESC' }
+        });
+
+        const startIndex = page * pageSize;
+        const endIndex = startIndex + pageSize;
+        const invoices = allInvoices.slice(startIndex, endIndex);
+
+        let message = "📋 Your invoices:\n\n";
+        if (allInvoices.length === 0) {
+            message += "No invoices yet";
+        } else {
+            message += `Showing ${startIndex + 1}-${Math.min(endIndex, allInvoices.length)} of ${allInvoices.length} invoices`;
+        }
+
+        return {
+            invoices,
+            allInvoices,
+            page,
+            pageSize,
+            startIndex,
+            endIndex,
+            message
+        };
+    }
+
+    /**
+     * Formats invoice detail message
+     * @param invoice - The invoice to format
+     * @returns Formatted invoice detail message
+     */
+    public formatInvoiceDetailMessage(invoice: UserInvoice): string {
+        const currencyConfig = CurrencyConverter.getConfig(invoice.currency as InternalCurrency);
+        let status: string;
+        
+        switch (invoice.status) {
+            case 'paid':
+                status = '✅ Paid';
+                break;
+            case 'expired':
+                status = '❌ Expired';
+                break;
+            case 'active':
+            default:
+                status = '⏳ Pending';
+                break;
+        }
+        
+        let message = `📄 Invoice Details\n\n`;
+        message += `💰 Amount: ${formatNumber(invoice.amount)} ${currencyConfig.emoji} ${currencyConfig.name}\n`;
+        message += `📊 Status: ${status}\n`;
+        message += `🆔 Invoice ID: ${invoice.invoiceId}\n`;
+        message += `📅 Created: ${invoice.createdAt.toLocaleDateString()}\n\n`;
+
+        if (invoice.paymentUrl && invoice.status !== 'paid' && invoice.status !== 'expired') {
+            message += `💳 Pay with XRocket Pay:\n${invoice.paymentUrl}`;
+        }
+
+        return message;
+    }
+
+    /**
+     * Displays user's balance
+     * @param ctx - The bot context
+     * @param user - The user whose balance to display
+     */
+    public async displayBalance(ctx: BotContext, user: User): Promise<void> {
+        if (!ctx.chat) {
+            throw new Error("Chat context not found");
+        }
+
+        const balances = await this.getUserBalances(user);
+        const message = this.formatBalanceMessage(balances);
+
+        const sent = await ctx.reply(message, { reply_markup: createMainMenuKeyboard() });
+        ctx.session.messageId = sent.message_id;
     }
 } 
