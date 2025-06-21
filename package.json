@@ -1,0 +1,28 @@
+{
+  "name": "xrocket-pay-example",
+  "version": "1.0.0",
+  "description": "Telegram bot example using xrocket-pay-api-sdk",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "ts-node-dev --respawn --transpile-only --exit-child --ignore-watch node_modules src/index.ts",
+    "typeorm": "typeorm-ts-node-commonjs"
+  },
+  "dependencies": {
+    "@grammyjs/conversations": "^1.1.1",
+    "@grammyjs/menu": "^1.2.0",
+    "dotenv": "^16.4.1",
+    "grammy": "^1.21.1",
+    "mysql2": "^3.9.1",
+    "typeorm": "^0.3.20",
+    "winston": "^3.17.0",
+    "xrocket-pay-api-sdk": "^1.0.5"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.16",
+    "ts-node": "^10.9.2",
+    "ts-node-dev": "^2.0.0",
+    "typescript": "^5.3.3"
+  }
+}
