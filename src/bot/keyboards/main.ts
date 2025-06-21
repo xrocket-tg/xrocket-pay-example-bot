@@ -20,7 +20,7 @@ export function createWithdrawMenuKeyboard(): InlineKeyboard {
     return new InlineKeyboard()
         .text("🔁 Transfer", "withdraw_transfer")
         .row()
-        .text("🧾 Multicheque", "withdraw_multicheque")
+        .text("🧾 Cheque", "withdraw_multicheque")
         .row()
         .text("🌐 External Wallet", "withdraw_external")
         .row()

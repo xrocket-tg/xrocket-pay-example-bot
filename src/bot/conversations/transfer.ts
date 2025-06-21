@@ -294,11 +294,11 @@ export async function handleTransferConfirmation(ctx: BotContext): Promise<void>
         const savedTransfer = await transferRepo.save(transfer);
         logger.info('[Transfer] Transfer record created:', savedTransfer);
 
-        // Execute transfer via XRocket Pay
-        logger.info('[Transfer] Executing transfer via XRocket Pay');
+        // Execute transfer via xRocket Pay
+        logger.info('[Transfer] Executing transfer via xRocket Pay');
         const xrocketPay = XRocketPayService.getInstance();
         const result = await xrocketPay.createTransfer(savedTransfer);
-        logger.info('[Transfer] XRocket Pay transfer result:', result);
+        logger.info('[Transfer] xRocket Pay transfer result:', result);
 
         // Update user balance (subtract amount)
         logger.info('[Transfer] Updating sender balance');

@@ -1,8 +1,10 @@
 import { XRocketPayClient } from 'xrocket-pay-api-sdk';
 import { UserInvoice } from '../entities/user-invoice';
 import { UserTransfer } from '../entities/user-transfer';
+import { UserCheque } from '../entities/user-cheque';
 import { AppDataSource } from '../config/database';
 import { CurrencyConverter, InternalCurrency } from '../types/currency';
+import { CreateChequeDto, SimpleChequeResponse, PaginatedShortChequeDtoResponse } from 'xrocket-pay-api-sdk/dist/types/multicheque';
 
 export class XRocketPayService {
     private static instance: XRocketPayService;
@@ -27,7 +29,7 @@ export class XRocketPayService {
      */
     public async createInvoice(userInvoice: UserInvoice): Promise<{ paymentUrl: string; invoiceId: string }> {
         try {
-            // Convert internal currency to external currency for XRocket Pay API
+            // Convert internal currency to external currency for xRocket Pay API
             const externalCurrency = CurrencyConverter.toExternal(userInvoice.currency as InternalCurrency);
             
             // Create callback URL to redirect back to bot
@@ -122,7 +124,7 @@ export class XRocketPayService {
                 throw new Error('Invalid currency');
             }
 
-            // Convert internal currency to external currency for XRocket Pay API
+            // Convert internal currency to external currency for xRocket Pay API
             const externalCurrency = CurrencyConverter.toExternal(userTransfer.currency as InternalCurrency);
             
             const response = await this.client.createTransfer({
@@ -148,6 +150,97 @@ export class XRocketPayService {
             };
         } catch (error) {
             console.error('Error creating transfer:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Creates a multicheque
+     */
+    public async createMulticheque(userCheque: UserCheque): Promise<{ chequeId: number; link: string }> {
+        try {
+            // Validate input
+            if (!userCheque.amount || userCheque.amount <= 0) {
+                throw new Error('Invalid cheque amount');
+            }
+
+            if (!userCheque.currency) {
+                throw new Error('Invalid currency');
+            }
+
+            if (!userCheque.usersNumber || userCheque.usersNumber <= 0) {
+                throw new Error('Invalid users number');
+            }
+
+            // Convert internal currency to external currency for xRocket Pay API
+            const externalCurrency = CurrencyConverter.toExternal(userCheque.currency as InternalCurrency);
+            
+            const chequeData: CreateChequeDto = {
+                currency: externalCurrency,
+                chequePerUser: userCheque.amount,
+                usersNumber: userCheque.usersNumber,
+                refProgram: 0, // No referral program for now
+                description: `Cheque from ${userCheque.user.username || userCheque.user.telegramId}`,
+                sendNotifications: true,
+                enableCaptcha: true
+            };
+
+            const response = await this.client.createMulticheque(chequeData);
+
+            if (!response.success || !response.data) {
+                throw new Error('Failed to create multicheque');
+            }
+
+            // Update cheque with cheque ID and link
+            const chequeRepo = AppDataSource.getRepository(UserCheque);
+            await chequeRepo.update(userCheque.id, {
+                chequeId: response.data.id,
+                link: response.data.link,
+                status: response.data.state
+            });
+
+            return {
+                chequeId: response.data.id,
+                link: response.data.link
+            };
+        } catch (error) {
+            console.error('Error creating multicheque:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Gets a specific multicheque by ID
+     */
+    public async getMulticheque(chequeId: number): Promise<SimpleChequeResponse> {
+        try {
+            const response = await this.client.getMulticheque(chequeId);
+            
+            if (!response.success) {
+                throw new Error('Failed to get multicheque');
+            }
+
+            return response;
+        } catch (error) {
+            console.error('Error getting multicheque:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Gets list of multicheques with pagination
+     */
+    public async getMulticheques(params?: { page?: number; limit?: number }): Promise<PaginatedShortChequeDtoResponse> {
+        try {
+            const response = await this.client.getMulticheques(params);
+            
+            if (!response.success) {
+                throw new Error('Failed to get multicheques');
+            }
+
+            return response;
+        } catch (error) {
+            console.error('Error getting multicheques:', error);
             throw error;
         }
     }

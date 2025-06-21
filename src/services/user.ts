@@ -238,7 +238,7 @@ export class UserService {
         message += `📅 Created: ${invoice.createdAt.toLocaleDateString()}\n\n`;
 
         if (invoice.paymentUrl && invoice.status !== 'paid' && invoice.status !== 'expired') {
-            message += `💳 Pay with XRocket Pay:\n${invoice.paymentUrl}`;
+            message += `💳 Pay with xRocket Pay:\n${invoice.paymentUrl}`;
         }
 
         return message;

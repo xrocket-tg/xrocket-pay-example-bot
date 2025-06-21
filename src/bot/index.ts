@@ -2,9 +2,10 @@ import { Bot, session } from "grammy";
 import { BotContext } from "../types/bot";
 import { AppDataSource } from "../config/database";
 import { handleStart } from "./handlers/commands";
-import { handleBalance, handleCheckPayment, handleInvoices, handleInvoiceDetail, handleInvoicePagination, handleDeleteInvoice, handleMainMenu, handleWithdraw, handleMyWithdrawals, handleWithdrawTransfer, handleWithdrawMulticheque, handleWithdrawExternal } from "./handlers/callbacks";
+import { handleBalance, handleCheckPayment, handleInvoices, handleInvoiceDetail, handleInvoicePagination, handleDeleteInvoice, handleMainMenu, handleWithdraw, handleMyWithdrawals, handleWithdrawTransfer, handleWithdrawMulticheque, handleWithdrawExternal, handleOpenCheque } from "./handlers/callbacks";
 import { handleDepositFlow, handleCurrencySelection, handleAmountInput } from "./conversations/deposit";
 import { handleTransferFlow, handleTransferCurrencySelection, handleTransferAmountInput, handleTransferRecipientInput, handleTransferConfirmation } from "./conversations/transfer";
+import { handleMultichequeCurrencySelection, handleMultichequeAmountInput, handleMultichequeConfirmation } from "./conversations/multicheque";
 import * as dotenv from 'dotenv';
 
 dotenv.config();
@@ -34,6 +35,7 @@ bot.callbackQuery(/^invoice_/, handleInvoiceDetail);
 bot.callbackQuery(/^check_payment_/, handleCheckPayment);
 bot.callbackQuery(/^delete_invoice_/, handleDeleteInvoice);
 bot.callbackQuery(/^invoices_page_/, handleInvoicePagination);
+bot.callbackQuery(/^open_cheque_/, handleOpenCheque);
 
 // Register deposit flow handlers
 bot.callbackQuery(/^coin_/, handleCurrencySelection);
@@ -41,6 +43,11 @@ bot.callbackQuery(/^coin_/, handleCurrencySelection);
 // Register transfer flow handlers
 bot.callbackQuery(/^transfer_coin_/, handleTransferCurrencySelection);
 bot.callbackQuery("confirm_transfer", handleTransferConfirmation);
+
+// Register multicheque flow handlers
+bot.callbackQuery(/^multicheque_currency_/, handleMultichequeCurrencySelection);
+bot.callbackQuery("confirm_multicheque", handleMultichequeConfirmation);
+
 bot.on("message:text", async (ctx) => {
     // Handle amount input for deposit flow
     if (ctx.session.step === "deposit_amount") {
@@ -53,6 +60,10 @@ bot.on("message:text", async (ctx) => {
     // Handle recipient input for transfer flow
     else if (ctx.session.step === "transfer_recipient") {
         await handleTransferRecipientInput(ctx);
+    }
+    // Handle amount input for multicheque flow
+    else if (ctx.session.step === "multicheque_amount") {
+        await handleMultichequeAmountInput(ctx);
     }
 });
 

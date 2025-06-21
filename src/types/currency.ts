@@ -8,7 +8,7 @@
 export type InternalCurrency = 'TON' | 'USDT' | 'XROCK';
 
 /**
- * External currency codes used by XRocket Pay API
+ * External currency codes used by xRocket Pay API
  */
 export type ExternalCurrency = 'TONCOIN' | 'USDT' | 'XROCK';
 
@@ -18,7 +18,7 @@ export type ExternalCurrency = 'TONCOIN' | 'USDT' | 'XROCK';
 export interface CurrencyConfig {
     /** Internal currency code used in the application */
     readonly internalCode: InternalCurrency;
-    /** External currency code used by XRocket Pay API */
+    /** External currency code used by xRocket Pay API */
     readonly externalCode: ExternalCurrency;
     /** Display emoji for the currency */
     readonly emoji: string;

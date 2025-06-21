@@ -4,6 +4,7 @@ import { UserBalance } from "../entities/user-balance";
 import * as dotenv from 'dotenv';
 import { UserInvoice } from "../entities/user-invoice";
 import { UserTransfer } from "../entities/user-transfer";
+import { UserCheque } from "../entities/user-cheque";
 
 dotenv.config();
 
@@ -30,7 +31,7 @@ export const AppDataSource = new DataSource({
     database: DATABASE_CONFIG.NAME,
     synchronize: true,
     logging: ["error", "warn"],
-    entities: [User, UserBalance, UserInvoice, UserTransfer],
+    entities: [User, UserBalance, UserInvoice, UserTransfer, UserCheque],
     subscribers: [],
     migrations: [],
 }); 

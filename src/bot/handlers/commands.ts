@@ -13,7 +13,7 @@ export async function handleStart(ctx: BotContext): Promise<void> {
     const userService = UserService.getInstance();
     const user = await userService.findOrCreateUser(ctx);
     
-    // Check if this is a callback from XRocket Pay with invoice parameter
+    // Check if this is a callback from xRocket Pay with invoice parameter
     const startParam = ctx.match;
     if (startParam && typeof startParam === 'string' && startParam.startsWith('invoice_')) {
         const invoiceId = startParam.replace('invoice_', '');

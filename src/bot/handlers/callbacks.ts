@@ -10,6 +10,8 @@ import { UserInvoice } from "../../entities/user-invoice";
 import { XRocketPayService } from "../../services/xrocket-pay";
 import logger from "../../utils/logger";
 import { handleTransferFlow } from "../conversations/transfer";
+import { handleMultichequeFlow } from "../conversations/multicheque";
+import { UserCheque } from "../../entities/user-cheque";
 
 /**
  * Handles the main menu balance display
@@ -146,14 +148,14 @@ export async function handleInvoiceDetail(ctx: BotContext): Promise<void> {
         return;
     }
 
-    // Fetch latest status from XRocket Pay
+    // Fetch latest status from xRocket Pay
     try {
         const xrocketPay = XRocketPayService.getInstance();
         const xrocketStatus = await xrocketPay.checkInvoiceStatus(invoice.invoiceId);
         
-        logger.info('[HandleInvoiceDetail] XRocket Pay status:', xrocketStatus);
+        logger.info('[HandleInvoiceDetail] xRocket Pay status:', xrocketStatus);
         
-        // Map XRocket Pay status to internal status
+        // Map xRocket Pay status to internal status
         let newStatus = invoice.status;
         switch (xrocketStatus.toLowerCase()) {
             case 'paid':
@@ -175,7 +177,7 @@ export async function handleInvoiceDetail(ctx: BotContext): Promise<void> {
             });
         }
     } catch (error) {
-        logger.error('[HandleInvoiceDetail] Error fetching invoice status from XRocket Pay:', error);
+        logger.error('[HandleInvoiceDetail] Error fetching invoice status from xRocket Pay:', error);
         // Continue with existing status if API call fails
     }
 
@@ -252,14 +254,14 @@ export async function handleCheckPayment(ctx: BotContext): Promise<void> {
         return;
     }
 
-    logger.info('[HandleCheckPayment] Invoice found, checking XRocket Pay status');
-    logger.info('[HandleCheckPayment] XRocket Pay invoice ID:', invoice.invoiceId);
+    logger.info('[HandleCheckPayment] Invoice found, checking xRocket Pay status');
+    logger.info('[HandleCheckPayment] xRocket Pay invoice ID:', invoice.invoiceId);
 
     try {
         const xrocketPay = XRocketPayService.getInstance();
         const xrocketStatus = await xrocketPay.checkInvoiceStatus(invoice.invoiceId);
         
-        logger.info('[HandleCheckPayment] XRocket Pay status:', xrocketStatus);
+        logger.info('[HandleCheckPayment] xRocket Pay status:', xrocketStatus);
         logger.info('[HandleCheckPayment] Current DB status:', invoice.status);
         
         if (xrocketStatus.toLowerCase() === 'paid' && invoice.status !== 'paid') {
@@ -362,9 +364,7 @@ export async function handleWithdrawTransfer(ctx: BotContext): Promise<void> {
  * Handles the multicheque option in withdraw submenu (stub)
  */
 export async function handleWithdrawMulticheque(ctx: BotContext): Promise<void> {
-    await ctx.reply("🧾 Multicheque functionality coming soon!", {
-        reply_markup: createWithdrawMenuKeyboard()
-    });
+    await handleMultichequeFlow(ctx);
 }
 
 /**
@@ -373,5 +373,39 @@ export async function handleWithdrawMulticheque(ctx: BotContext): Promise<void> 
 export async function handleWithdrawExternal(ctx: BotContext): Promise<void> {
     await ctx.reply("🌐 External wallet withdrawal coming soon!", {
         reply_markup: createWithdrawMenuKeyboard()
+    });
+}
+
+/**
+ * Handles opening a cheque link
+ */
+export async function handleOpenCheque(ctx: BotContext): Promise<void> {
+    if (!ctx.callbackQuery?.data) {
+        return;
+    }
+
+    const match = ctx.callbackQuery.data.match(/open_cheque_(\d+)/);
+    if (!match) {
+        return;
+    }
+
+    const chequeId = parseInt(match[1]);
+    const chequeRepo = AppDataSource.getRepository(UserCheque);
+    const cheque = await chequeRepo.findOne({ 
+        where: { id: chequeId },
+        relations: ['user']
+    });
+
+    if (!cheque || !cheque.link) {
+        await ctx.api.answerCallbackQuery(ctx.callbackQuery.id, { 
+            text: "❌ Cheque not found or link unavailable" 
+        });
+        return;
+    }
+
+    // Answer the callback query with the link
+    await ctx.api.answerCallbackQuery(ctx.callbackQuery.id, { 
+        text: "🔗 Opening cheque link...",
+        url: cheque.link
     });
 } 
