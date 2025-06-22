@@ -2,10 +2,11 @@ import { Bot, session } from "grammy";
 import { BotContext } from "../types/bot";
 import { AppDataSource } from "../config/database";
 import { handleStart } from "./handlers/commands";
-import { handleBalance, handleCheckPayment, handleInvoices, handleInvoiceDetail, handleInvoicePagination, handleDeleteInvoice, handleMainMenu, handleWithdraw, handleMyWithdrawals, handleWithdrawTransfer, handleWithdrawMulticheque, handleWithdrawExternal, handleOpenCheque } from "./handlers/callbacks";
+import { handleBalance, handleCheckPayment, handleInvoices, handleInvoiceDetail, handleInvoicePagination, handleDeleteInvoice, handleMainMenu, handleWithdraw, handleMyWithdrawals, handleWithdrawTransfer, handleWithdrawMulticheque, handleWithdrawExternal, handleOpenCheque, handleWithdrawalDetail, handleCheckWithdrawalStatus, handleCopyWithdrawalHash } from "./handlers/callbacks";
 import { handleDepositFlow, handleCurrencySelection, handleAmountInput } from "./conversations/deposit";
 import { handleTransferFlow, handleTransferCurrencySelection, handleTransferAmountInput, handleTransferRecipientInput, handleTransferConfirmation } from "./conversations/transfer";
 import { handleMultichequeCurrencySelection, handleMultichequeAmountInput, handleMultichequeConfirmation } from "./conversations/multicheque";
+import { handleExternalWithdrawalFlow, handleWithdrawalCurrencySelection, handleWithdrawalAmountInput, handleWithdrawalNetworkSelection, handleWithdrawalAddressInput, handleWithdrawalConfirmation } from "./conversations/external-withdrawal";
 import * as dotenv from 'dotenv';
 
 dotenv.config();
@@ -48,6 +49,16 @@ bot.callbackQuery("confirm_transfer", handleTransferConfirmation);
 bot.callbackQuery(/^multicheque_currency_/, handleMultichequeCurrencySelection);
 bot.callbackQuery("confirm_multicheque", handleMultichequeConfirmation);
 
+// Register external withdrawal flow handlers
+bot.callbackQuery(/^withdrawal_currency_/, handleWithdrawalCurrencySelection);
+bot.callbackQuery(/^withdrawal_network_/, handleWithdrawalNetworkSelection);
+bot.callbackQuery("withdrawal_confirm", handleWithdrawalConfirmation);
+
+// Register withdrawal detail handlers
+bot.callbackQuery(/^withdrawal_/, handleWithdrawalDetail);
+bot.callbackQuery(/^check_withdrawal_/, handleCheckWithdrawalStatus);
+bot.callbackQuery(/^copy_hash_/, handleCopyWithdrawalHash);
+
 bot.on("message:text", async (ctx) => {
     // Handle amount input for deposit flow
     if (ctx.session.step === "deposit_amount") {
@@ -64,6 +75,14 @@ bot.on("message:text", async (ctx) => {
     // Handle amount input for multicheque flow
     else if (ctx.session.step === "multicheque_amount") {
         await handleMultichequeAmountInput(ctx);
+    }
+    // Handle amount input for withdrawal flow
+    else if (ctx.session.step === "withdrawal_amount") {
+        await handleWithdrawalAmountInput(ctx);
+    }
+    // Handle address input for withdrawal flow
+    else if (ctx.session.step === "withdrawal_address") {
+        await handleWithdrawalAddressInput(ctx);
     }
 });
 

@@ -2,9 +2,11 @@ import { XRocketPayClient } from 'xrocket-pay-api-sdk';
 import { UserInvoice } from '../entities/user-invoice';
 import { UserTransfer } from '../entities/user-transfer';
 import { UserCheque } from '../entities/user-cheque';
+import { UserWithdrawal } from '../entities/user-withdrawal';
 import { AppDataSource } from '../config/database';
 import { CurrencyConverter, InternalCurrency } from '../types/currency';
 import { CreateChequeDto, SimpleChequeResponse, PaginatedShortChequeDtoResponse } from 'xrocket-pay-api-sdk/dist/types/multicheque';
+import { CreateWithdrawalDto, AppWithdrawalResponse, WithdrawalFeesResponse, WithdrawalStatusResponse } from 'xrocket-pay-api-sdk/dist/types/app';
 
 export class XRocketPayService {
     private static instance: XRocketPayService;
@@ -266,6 +268,98 @@ export class XRocketPayService {
         } catch (error) {
             console.error('Error validating Telegram ID:', error);
             return false;
+        }
+    }
+
+    /**
+     * Creates a withdrawal to an external wallet
+     */
+    public async createWithdrawal(userWithdrawal: UserWithdrawal): Promise<{ withdrawalId: string }> {
+        try {
+            // Validate input
+            if (!userWithdrawal.amount || userWithdrawal.amount <= 0) {
+                throw new Error('Invalid withdrawal amount');
+            }
+            if (!userWithdrawal.currency) {
+                throw new Error('Invalid currency');
+            }
+            if (!userWithdrawal.address) {
+                throw new Error('Invalid withdrawal address');
+            }
+            if (!userWithdrawal.network) {
+                throw new Error('Invalid withdrawal network');
+            }
+
+            // Convert internal currency to external currency for xRocket Pay API
+            const externalCurrency = CurrencyConverter.toExternal(userWithdrawal.currency as InternalCurrency);
+
+            const withdrawalDto: CreateWithdrawalDto = {
+                amount: userWithdrawal.amount,
+                currency: externalCurrency,
+                withdrawalId: userWithdrawal.id.toString(),
+                network: userWithdrawal.network,
+                address: userWithdrawal.address,
+                comment: userWithdrawal.comment || undefined
+            };
+
+            const response: AppWithdrawalResponse = await this.client.createWithdrawal(withdrawalDto);
+
+            if (!response.success || !response.data) {
+                throw new Error('Failed to create withdrawal');
+            }
+
+            // Update withdrawal with withdrawal ID and status
+            const withdrawalRepo = AppDataSource.getRepository(UserWithdrawal);
+            await withdrawalRepo.update(userWithdrawal.id, {
+                withdrawalId: response.data.withdrawalId,
+                status: response.data.status,
+                txHash: response.data.txHash || null,
+                txLink: response.data.txLink || null,
+                error: response.data.error || null
+            });
+
+            return {
+                withdrawalId: response.data.withdrawalId
+            };
+        } catch (error) {
+            console.error('Error creating withdrawal:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Gets withdrawal fees for a given currency and amount
+     */
+    public async getWithdrawalFees(currency: string, amount: number): Promise<WithdrawalFeesResponse> {
+        try {
+            // Convert internal currency to external currency for xRocket Pay API
+            const externalCurrency = CurrencyConverter.toExternal(currency as InternalCurrency);
+            // The SDK expects currency as string, not an object
+            const response: WithdrawalFeesResponse = await this.client.getWithdrawalFees(externalCurrency);
+            if (!response.success || !response.data) {
+                throw new Error('Failed to get withdrawal fees');
+            }
+            return response;
+        } catch (error) {
+            console.error('Error getting withdrawal fees:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Gets withdrawal status by withdrawalId
+     */
+    public async getWithdrawalStatus(withdrawalId: string): Promise<WithdrawalStatusResponse> {
+        try {
+            // The SDK expects withdrawalId as string, not an object
+            const response: WithdrawalStatusResponse = await this.client.getWithdrawalStatus(withdrawalId);
+            if (!response.success || !response.data) {
+                throw new Error('Failed to get withdrawal status');
+            }
+            return response;
+        } catch (error) {
+            console.error('Error getting withdrawal status:', error);
+            throw error;
         }
     }
 } 

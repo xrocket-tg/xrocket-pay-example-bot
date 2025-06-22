@@ -12,6 +12,10 @@ import logger from "../../utils/logger";
 import { handleTransferFlow } from "../conversations/transfer";
 import { handleMultichequeFlow } from "../conversations/multicheque";
 import { UserCheque } from "../../entities/user-cheque";
+import { handleExternalWithdrawalFlow } from "../conversations/external-withdrawal";
+import { createWithdrawalDetailKeyboard } from "../keyboards/withdrawal";
+import { UserWithdrawal } from "../../entities/user-withdrawal";
+import { CurrencyConverter, InternalCurrency } from "../../types/currency";
 
 /**
  * Handles the main menu balance display
@@ -35,9 +39,22 @@ export async function handleDeposit(ctx: BotContext): Promise<void> {
  * Handles the main menu button click
  */
 export async function handleMainMenu(ctx: BotContext): Promise<void> {
+    if (!ctx.chat || !ctx.callbackQuery?.message) {
+        throw new Error("Invalid context for main menu");
+    }
+
     const userService = UserService.getInstance();
     const user = await userService.findOrCreateUser(ctx);
-    await userService.displayBalance(ctx, user);
+    
+    const balances = await userService.getUserBalances(user);
+    const message = userService.formatBalanceMessage(balances);
+
+    await ctx.api.editMessageText(
+        ctx.chat.id,
+        ctx.callbackQuery.message.message_id,
+        message,
+        { reply_markup: createMainMenuKeyboard() }
+    );
 }
 
 /**
@@ -368,12 +385,10 @@ export async function handleWithdrawMulticheque(ctx: BotContext): Promise<void> 
 }
 
 /**
- * Handles the external wallet option in withdraw submenu (stub)
+ * Handles the external wallet option in withdraw submenu
  */
 export async function handleWithdrawExternal(ctx: BotContext): Promise<void> {
-    await ctx.reply("🌐 External wallet withdrawal coming soon!", {
-        reply_markup: createWithdrawMenuKeyboard()
-    });
+    await handleExternalWithdrawalFlow(ctx);
 }
 
 /**
@@ -408,4 +423,284 @@ export async function handleOpenCheque(ctx: BotContext): Promise<void> {
         text: "🔗 Opening cheque link...",
         url: cheque.link
     });
+}
+
+/**
+ * Handles withdrawal detail view
+ */
+export async function handleWithdrawalDetail(ctx: BotContext): Promise<void> {
+    logger.info('[HandleWithdrawalDetail] Starting withdrawal detail view');
+    
+    if (!ctx.callbackQuery?.data) {
+        logger.error('[HandleWithdrawalDetail] No callback data found');
+        return;
+    }
+
+    logger.info('[HandleWithdrawalDetail] Callback data:', ctx.callbackQuery.data);
+
+    const match = ctx.callbackQuery.data.match(/withdrawal_(\d+)/);
+    if (!match) {
+        logger.error('[HandleWithdrawalDetail] Invalid callback data format');
+        return;
+    }
+
+    const withdrawalId = parseInt(match[1]);
+    logger.info('[HandleWithdrawalDetail] Parsed withdrawal ID:', withdrawalId);
+    
+    const withdrawalRepo = AppDataSource.getRepository(UserWithdrawal);
+    const withdrawal = await withdrawalRepo.findOne({ 
+        where: { id: withdrawalId },
+        relations: ['user']
+    });
+
+    logger.info('[HandleWithdrawalDetail] Found withdrawal:', withdrawal ? {
+        id: withdrawal.id,
+        withdrawalId: withdrawal.withdrawalId,
+        status: withdrawal.status
+    } : 'null');
+
+    if (!withdrawal) {
+        logger.error('[HandleWithdrawalDetail] Withdrawal not found for ID:', withdrawalId);
+        await ctx.reply("❌ Withdrawal not found", {
+            reply_markup: createMainMenuKeyboard()
+        });
+        return;
+    }
+
+    // Fetch latest status from xRocket Pay if we have a withdrawal ID
+    if (withdrawal.withdrawalId) {
+        try {
+            const xrocketPay = XRocketPayService.getInstance();
+            const statusResponse = await xrocketPay.getWithdrawalStatus(withdrawal.withdrawalId);
+            
+            logger.info('[HandleWithdrawalDetail] xRocket Pay status response:', statusResponse);
+            
+            if (statusResponse.success && statusResponse.data) {
+                const xrocketStatus = statusResponse.data.status;
+                logger.info('[HandleWithdrawalDetail] xRocket Pay status:', xrocketStatus);
+                
+                // Update database if status changed
+                if (withdrawal.status !== xrocketStatus) {
+                    logger.info('[HandleWithdrawalDetail] Status changed from', withdrawal.status, 'to', xrocketStatus);
+                    await withdrawalRepo.update(withdrawal.id, {
+                        status: xrocketStatus,
+                        txHash: statusResponse.data.txHash || withdrawal.txHash,
+                        txLink: statusResponse.data.txLink || withdrawal.txLink,
+                        error: statusResponse.data.error || withdrawal.error
+                    });
+                }
+            }
+        } catch (error) {
+            logger.error('[HandleWithdrawalDetail] Error fetching withdrawal status from xRocket Pay:', error);
+            // Continue with existing status if API call fails
+        }
+    }
+
+    // Reload withdrawal to get updated data
+    const updatedWithdrawal = await withdrawalRepo.findOne({ 
+        where: { id: withdrawalId },
+        relations: ['user']
+    });
+    
+    if (!updatedWithdrawal) {
+        logger.error('[HandleWithdrawalDetail] Failed to reload withdrawal data');
+        await ctx.reply("❌ Error loading withdrawal data", {
+            reply_markup: createMainMenuKeyboard()
+        });
+        return;
+    }
+
+    // Format withdrawal detail message
+    const currencyConfig = CurrencyConverter.getConfig(updatedWithdrawal.currency as InternalCurrency);
+    const statusEmoji = getWithdrawalStatusEmoji(updatedWithdrawal.status);
+    
+    let detailMessage = `🌐 Withdrawal Details\n\n` +
+        `💰 Amount: ${formatNumber(updatedWithdrawal.amount)} ${currencyConfig.emoji} ${currencyConfig.name}\n` +
+        `💸 Fee: ${formatNumber(updatedWithdrawal.fee)} ${currencyConfig.name}\n` +
+        `💰 Total: ${formatNumber(updatedWithdrawal.amount + updatedWithdrawal.fee)} ${currencyConfig.name}\n` +
+        `🌐 Network: ${updatedWithdrawal.network}\n` +
+        `🔗 Address: ${updatedWithdrawal.address}\n` +
+        `📊 Status: ${statusEmoji} ${updatedWithdrawal.status}\n` +
+        `📅 Created: ${updatedWithdrawal.createdAt.toLocaleDateString()}\n`;
+
+    if (updatedWithdrawal.txHash) {
+        detailMessage += `🔗 Transaction Hash: ${updatedWithdrawal.txHash}\n`;
+    }
+
+    if (updatedWithdrawal.error) {
+        detailMessage += `❌ Error: ${updatedWithdrawal.error}\n`;
+    }
+
+    if (updatedWithdrawal.comment) {
+        detailMessage += `💬 Comment: ${updatedWithdrawal.comment}\n`;
+    }
+
+    await ctx.api.editMessageText(
+        ctx.chat!.id,
+        ctx.callbackQuery.message!.message_id,
+        detailMessage,
+        { reply_markup: createWithdrawalDetailKeyboard(updatedWithdrawal) }
+    );
+}
+
+/**
+ * Handles withdrawal status check
+ */
+export async function handleCheckWithdrawalStatus(ctx: BotContext): Promise<void> {
+    logger.info('[HandleCheckWithdrawalStatus] Starting withdrawal status check');
+    
+    if (!ctx.callbackQuery?.data) {
+        logger.error('[HandleCheckWithdrawalStatus] No callback data found');
+        return;
+    }
+
+    const match = ctx.callbackQuery.data.match(/check_withdrawal_(\d+)/);
+    if (!match) {
+        logger.error('[HandleCheckWithdrawalStatus] Invalid callback data format');
+        return;
+    }
+
+    const withdrawalId = parseInt(match[1]);
+    logger.info('[HandleCheckWithdrawalStatus] Parsed withdrawal ID:', withdrawalId);
+
+    const withdrawalRepo = AppDataSource.getRepository(UserWithdrawal);
+    const withdrawal = await withdrawalRepo.findOne({ 
+        where: { id: withdrawalId },
+        relations: ['user']
+    });
+
+    if (!withdrawal || !withdrawal.withdrawalId) {
+        logger.error('[HandleCheckWithdrawalStatus] Withdrawal not found or no xRocket Pay ID');
+        await ctx.api.answerCallbackQuery(ctx.callbackQuery.id, { 
+            text: "❌ Withdrawal not found or no external ID" 
+        });
+        return;
+    }
+
+    try {
+        const xrocketPay = XRocketPayService.getInstance();
+        const statusResponse = await xrocketPay.getWithdrawalStatus(withdrawal.withdrawalId);
+        
+        if (statusResponse.success && statusResponse.data) {
+            const newStatus = statusResponse.data.status;
+            
+            // Update database if status changed
+            if (withdrawal.status !== newStatus) {
+                await withdrawalRepo.update(withdrawal.id, {
+                    status: newStatus,
+                    txHash: statusResponse.data.txHash || withdrawal.txHash,
+                    txLink: statusResponse.data.txLink || withdrawal.txLink,
+                    error: statusResponse.data.error || withdrawal.error
+                });
+                
+                // Reload withdrawal to get updated data
+                const updatedWithdrawal = await withdrawalRepo.findOne({ 
+                    where: { id: withdrawalId },
+                    relations: ['user']
+                });
+                
+                if (updatedWithdrawal) {
+                    // Update the message with new status
+                    const currencyConfig = CurrencyConverter.getConfig(updatedWithdrawal.currency as InternalCurrency);
+                    const statusEmoji = getWithdrawalStatusEmoji(newStatus);
+                    
+                    let detailMessage = `🌐 Withdrawal Details\n\n` +
+                        `💰 Amount: ${formatNumber(updatedWithdrawal.amount)} ${currencyConfig.emoji} ${currencyConfig.name}\n` +
+                        `💸 Fee: ${formatNumber(updatedWithdrawal.fee)} ${currencyConfig.name}\n` +
+                        `💰 Total: ${formatNumber(updatedWithdrawal.amount + updatedWithdrawal.fee)} ${currencyConfig.name}\n` +
+                        `🌐 Network: ${updatedWithdrawal.network}\n` +
+                        `🔗 Address: ${updatedWithdrawal.address}\n` +
+                        `📊 Status: ${statusEmoji} ${newStatus}\n` +
+                        `🆔 Withdrawal ID: ${updatedWithdrawal.withdrawalId}\n` +
+                        `📅 Created: ${updatedWithdrawal.createdAt.toLocaleDateString()}\n`;
+
+                    if (updatedWithdrawal.txHash) {
+                        detailMessage += `🔗 Transaction Hash: ${updatedWithdrawal.txHash}\n`;
+                    }
+
+                    if (updatedWithdrawal.error) {
+                        detailMessage += `❌ Error: ${updatedWithdrawal.error}\n`;
+                    }
+
+                    if (updatedWithdrawal.comment) {
+                        detailMessage += `💬 Comment: ${updatedWithdrawal.comment}\n`;
+                    }
+
+                    await ctx.api.editMessageText(
+                        ctx.chat!.id,
+                        ctx.callbackQuery.message!.message_id,
+                        detailMessage,
+                        { reply_markup: createWithdrawalDetailKeyboard(updatedWithdrawal) }
+                    );
+                }
+                
+                const statusEmoji = getWithdrawalStatusEmoji(newStatus);
+                await ctx.api.answerCallbackQuery(ctx.callbackQuery.id, { 
+                    text: `Status updated: ${statusEmoji} ${newStatus}` 
+                });
+            } else {
+                const statusEmoji = getWithdrawalStatusEmoji(newStatus);
+                await ctx.api.answerCallbackQuery(ctx.callbackQuery.id, { 
+                    text: `Current status: ${statusEmoji} ${newStatus}` 
+                });
+            }
+        } else {
+            await ctx.api.answerCallbackQuery(ctx.callbackQuery.id, { 
+                text: "❌ Failed to get status from xRocket Pay" 
+            });
+        }
+    } catch (error) {
+        logger.error('[HandleCheckWithdrawalStatus] Error checking withdrawal status:', error);
+        await ctx.api.answerCallbackQuery(ctx.callbackQuery.id, { 
+            text: "❌ Error checking withdrawal status" 
+        });
+    }
+}
+
+/**
+ * Handles copying withdrawal transaction hash
+ */
+export async function handleCopyWithdrawalHash(ctx: BotContext): Promise<void> {
+    if (!ctx.callbackQuery?.data) {
+        return;
+    }
+
+    const match = ctx.callbackQuery.data.match(/copy_hash_(\d+)/);
+    if (!match) {
+        return;
+    }
+
+    const withdrawalId = parseInt(match[1]);
+    const withdrawalRepo = AppDataSource.getRepository(UserWithdrawal);
+    const withdrawal = await withdrawalRepo.findOne({ where: { id: withdrawalId } });
+
+    if (!withdrawal || !withdrawal.txHash) {
+        await ctx.api.answerCallbackQuery(ctx.callbackQuery.id, { 
+            text: "❌ Transaction hash not available" 
+        });
+        return;
+    }
+
+    await ctx.api.answerCallbackQuery(ctx.callbackQuery.id, { 
+        text: `Transaction hash copied: ${withdrawal.txHash}` 
+    });
+}
+
+/**
+ * Get status emoji for withdrawal status
+ */
+function getWithdrawalStatusEmoji(status: string): string {
+    switch (status) {
+        case 'CREATED': return '⏳';
+        case 'COMPLETED': return '✅';
+        case 'FAIL': return '❌';
+        default: return '❓';
+    }
+}
+
+/**
+ * Format number with currency symbol
+ */
+function formatNumber(value: number): string {
+    return value.toLocaleString();
 } 

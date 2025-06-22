@@ -268,11 +268,16 @@ export async function handleMultichequeConfirmation(ctx: BotContext): Promise<vo
 
     } catch (error) {
         // Log only the relevant error data
-        if (error && typeof error === 'object' && 'response' in error && error.response?.data) {
-            logger.error('[Multicheque] Error during multicheque creation:', {
-                data: error.response.data,
-                errors: error.response.data.errors
-            });
+        if (error && typeof error === 'object' && 'response' in error) {
+            const errorResponse = error.response as any;
+            if (errorResponse?.data) {
+                logger.error('[Multicheque] Error during multicheque creation:', {
+                    data: errorResponse.data,
+                    errors: errorResponse.data.errors
+                });
+            } else {
+                logger.error('[Multicheque] Error during multicheque creation:', error);
+            }
         } else {
             logger.error('[Multicheque] Error during multicheque creation:', error);
         }
