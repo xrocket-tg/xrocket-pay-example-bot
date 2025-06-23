@@ -13,9 +13,13 @@ import { handleTransferFlow } from "../conversations/transfer";
 import { handleMultichequeFlow } from "../conversations/multicheque";
 import { UserCheque } from "../../entities/user-cheque";
 import { handleExternalWithdrawalFlow } from "../conversations/external-withdrawal";
-import { createWithdrawalDetailKeyboard } from "../keyboards/withdrawal";
+import { createWithdrawalDetailKeyboard, createWithdrawalsKeyboard, createWithdrawalHistoryMenuKeyboard } from "../keyboards/withdrawal";
 import { UserWithdrawal } from "../../entities/user-withdrawal";
 import { CurrencyConverter, InternalCurrency } from "../../types/currency";
+import { createTransfersKeyboard, createTransferDetailKeyboard } from "../keyboards/transfer";
+import { createChequesKeyboard, createChequeDetailKeyboard } from "../keyboards/cheque";
+import { UserTransfer } from "../../entities/user-transfer";
+import { formatNumber } from "../utils/formatters";
 
 /**
  * Handles the main menu balance display
@@ -72,12 +76,15 @@ export async function handleWithdraw(ctx: BotContext): Promise<void> {
 }
 
 /**
- * Handles the my withdrawals button click (placeholder)
+ * Handles the my withdrawals button click - shows withdrawal history menu
  */
 export async function handleMyWithdrawals(ctx: BotContext): Promise<void> {
-    await ctx.reply("📊 My Withdrawals functionality coming soon!", {
-        reply_markup: createMainMenuKeyboard()
-    });
+    await ctx.api.editMessageText(
+        ctx.chat!.id,
+        ctx.callbackQuery!.message!.message_id,
+        "📊 My Withdrawals\n\nChoose the type of withdrawal history you want to view:",
+        { reply_markup: createWithdrawalHistoryMenuKeyboard() }
+    );
 }
 
 /**
@@ -89,9 +96,14 @@ export async function handleInvoices(ctx: BotContext): Promise<void> {
     
     const result = await userService.getUserInvoicesWithPagination(user, 0, 5);
     
-    await ctx.reply(result.message, {
-        reply_markup: createInvoicesKeyboard(result.invoices, result.allInvoices.length, 0)
-    });
+    await ctx.api.editMessageText(
+        ctx.chat!.id,
+        ctx.callbackQuery!.message!.message_id,
+        result.message,
+        {
+            reply_markup: createInvoicesKeyboard(result.invoices, result.allInvoices.length, 0)
+        }
+    );
 }
 
 /**
@@ -658,35 +670,6 @@ export async function handleCheckWithdrawalStatus(ctx: BotContext): Promise<void
 }
 
 /**
- * Handles copying withdrawal transaction hash
- */
-export async function handleCopyWithdrawalHash(ctx: BotContext): Promise<void> {
-    if (!ctx.callbackQuery?.data) {
-        return;
-    }
-
-    const match = ctx.callbackQuery.data.match(/copy_hash_(\d+)/);
-    if (!match) {
-        return;
-    }
-
-    const withdrawalId = parseInt(match[1]);
-    const withdrawalRepo = AppDataSource.getRepository(UserWithdrawal);
-    const withdrawal = await withdrawalRepo.findOne({ where: { id: withdrawalId } });
-
-    if (!withdrawal || !withdrawal.txHash) {
-        await ctx.api.answerCallbackQuery(ctx.callbackQuery.id, { 
-            text: "❌ Transaction hash not available" 
-        });
-        return;
-    }
-
-    await ctx.api.answerCallbackQuery(ctx.callbackQuery.id, { 
-        text: `Transaction hash copied: ${withdrawal.txHash}` 
-    });
-}
-
-/**
  * Get status emoji for withdrawal status
  */
 function getWithdrawalStatusEmoji(status: string): string {
@@ -699,8 +682,344 @@ function getWithdrawalStatusEmoji(status: string): string {
 }
 
 /**
- * Format number with currency symbol
+ * Handles transfer history
  */
-function formatNumber(value: number): string {
-    return value.toLocaleString();
+export async function handleHistoryTransfers(ctx: BotContext): Promise<void> {
+    const userService = UserService.getInstance();
+    const user = await userService.findOrCreateUser(ctx);
+    
+    const transferRepo = AppDataSource.getRepository(UserTransfer);
+    const allTransfers = await transferRepo.find({
+        where: { sender: { id: user.id } },
+        order: { createdAt: 'DESC' },
+        relations: ['sender']
+    });
+    
+    const pageSize = 5;
+    const transfers = allTransfers.slice(0, pageSize);
+    
+    const message = transfers.length > 0 
+        ? `🔄 My Transfers (${allTransfers.length} total)\n\nSelect a transfer to view details:`
+        : "🔄 My Transfers\n\nNo transfers found.";
+    
+    await ctx.api.editMessageText(
+        ctx.chat!.id,
+        ctx.callbackQuery!.message!.message_id,
+        message,
+        { reply_markup: createTransfersKeyboard(transfers, allTransfers.length, 0) }
+    );
+}
+
+/**
+ * Handles transfer pagination
+ */
+export async function handleTransferPagination(ctx: BotContext): Promise<void> {
+    if (!ctx.callbackQuery?.data) {
+        return;
+    }
+
+    const match = ctx.callbackQuery.data.match(/transfers_page_(\d+)/);
+    if (!match) {
+        return;
+    }
+
+    const page = parseInt(match[1]);
+    const userService = UserService.getInstance();
+    const user = await userService.findOrCreateUser(ctx);
+    
+    const transferRepo = AppDataSource.getRepository(UserTransfer);
+    const allTransfers = await transferRepo.find({
+        where: { sender: { id: user.id } },
+        order: { createdAt: 'DESC' },
+        relations: ['sender']
+    });
+    
+    const pageSize = 5;
+    const startIndex = page * pageSize;
+    const transfers = allTransfers.slice(startIndex, startIndex + pageSize);
+    
+    const message = transfers.length > 0 
+        ? `🔄 My Transfers (${allTransfers.length} total)\n\nSelect a transfer to view details:`
+        : "🔄 My Transfers\n\nNo transfers found.";
+    
+    await ctx.api.editMessageText(
+        ctx.chat!.id,
+        ctx.callbackQuery.message!.message_id,
+        message,
+        { reply_markup: createTransfersKeyboard(transfers, allTransfers.length, page) }
+    );
+}
+
+/**
+ * Handles cheque history
+ */
+export async function handleHistoryCheques(ctx: BotContext): Promise<void> {
+    const userService = UserService.getInstance();
+    const user = await userService.findOrCreateUser(ctx);
+    
+    const chequeRepo = AppDataSource.getRepository(UserCheque);
+    const allCheques = await chequeRepo.find({
+        where: { user: { id: user.id } },
+        order: { createdAt: 'DESC' },
+        relations: ['user']
+    });
+    
+    const pageSize = 5;
+    const cheques = allCheques.slice(0, pageSize);
+    
+    const message = cheques.length > 0 
+        ? `🎫 My Cheques (${allCheques.length} total)\n\nSelect a cheque to view details:`
+        : "🎫 My Cheques\n\nNo cheques found.";
+    
+    await ctx.api.editMessageText(
+        ctx.chat!.id,
+        ctx.callbackQuery!.message!.message_id,
+        message,
+        { reply_markup: createChequesKeyboard(cheques, allCheques.length, 0) }
+    );
+}
+
+/**
+ * Handles cheque pagination
+ */
+export async function handleChequePagination(ctx: BotContext): Promise<void> {
+    if (!ctx.callbackQuery?.data) {
+        return;
+    }
+
+    const match = ctx.callbackQuery.data.match(/cheques_page_(\d+)/);
+    if (!match) {
+        return;
+    }
+
+    const page = parseInt(match[1]);
+    const userService = UserService.getInstance();
+    const user = await userService.findOrCreateUser(ctx);
+    
+    const chequeRepo = AppDataSource.getRepository(UserCheque);
+    const allCheques = await chequeRepo.find({
+        where: { user: { id: user.id } },
+        order: { createdAt: 'DESC' },
+        relations: ['user']
+    });
+    
+    const pageSize = 5;
+    const startIndex = page * pageSize;
+    const cheques = allCheques.slice(startIndex, startIndex + pageSize);
+    
+    const message = cheques.length > 0 
+        ? `🎫 My Cheques (${allCheques.length} total)\n\nSelect a cheque to view details:`
+        : "🎫 My Cheques\n\nNo cheques found.";
+    
+    await ctx.api.editMessageText(
+        ctx.chat!.id,
+        ctx.callbackQuery.message!.message_id,
+        message,
+        { reply_markup: createChequesKeyboard(cheques, allCheques.length, page) }
+    );
+}
+
+/**
+ * Handles withdrawal history
+ */
+export async function handleHistoryWithdrawals(ctx: BotContext): Promise<void> {
+    const userService = UserService.getInstance();
+    const user = await userService.findOrCreateUser(ctx);
+    
+    const withdrawalRepo = AppDataSource.getRepository(UserWithdrawal);
+    const allWithdrawals = await withdrawalRepo.find({
+        where: { user: { id: user.id } },
+        order: { createdAt: 'DESC' },
+        relations: ['user']
+    });
+    
+    const pageSize = 5;
+    const withdrawals = allWithdrawals.slice(0, pageSize);
+    
+    const message = withdrawals.length > 0 
+        ? `🌐 My Blockchain Withdrawals (${allWithdrawals.length} total)\n\nSelect a withdrawal to view details:`
+        : "🌐 My Blockchain Withdrawals\n\nNo withdrawals found.";
+    
+    await ctx.api.editMessageText(
+        ctx.chat!.id,
+        ctx.callbackQuery!.message!.message_id,
+        message,
+        { reply_markup: createWithdrawalsKeyboard(withdrawals, allWithdrawals.length, 0) }
+    );
+}
+
+/**
+ * Handles withdrawal pagination
+ */
+export async function handleWithdrawalPagination(ctx: BotContext): Promise<void> {
+    if (!ctx.callbackQuery?.data) {
+        return;
+    }
+
+    const match = ctx.callbackQuery.data.match(/withdrawals_page_(\d+)/);
+    if (!match) {
+        return;
+    }
+
+    const page = parseInt(match[1]);
+    const userService = UserService.getInstance();
+    const user = await userService.findOrCreateUser(ctx);
+    
+    const withdrawalRepo = AppDataSource.getRepository(UserWithdrawal);
+    const allWithdrawals = await withdrawalRepo.find({
+        where: { user: { id: user.id } },
+        order: { createdAt: 'DESC' },
+        relations: ['user']
+    });
+    
+    const pageSize = 5;
+    const startIndex = page * pageSize;
+    const withdrawals = allWithdrawals.slice(startIndex, startIndex + pageSize);
+    
+    const message = withdrawals.length > 0 
+        ? `🌐 My Blockchain Withdrawals (${allWithdrawals.length} total)\n\nSelect a withdrawal to view details:`
+        : "🌐 My Blockchain Withdrawals\n\nNo withdrawals found.";
+    
+    await ctx.api.editMessageText(
+        ctx.chat!.id,
+        ctx.callbackQuery.message!.message_id,
+        message,
+        { reply_markup: createWithdrawalsKeyboard(withdrawals, allWithdrawals.length, page) }
+    );
+}
+
+/**
+ * Handles transfer detail view
+ */
+export async function handleTransferDetail(ctx: BotContext): Promise<void> {
+    logger.info('[HandleTransferDetail] Starting transfer detail view');
+    
+    if (!ctx.callbackQuery?.data) {
+        logger.error('[HandleTransferDetail] No callback data found');
+        return;
+    }
+
+    const match = ctx.callbackQuery.data.match(/transfer_detail_(\d+)/);
+    if (!match) {
+        logger.error('[HandleTransferDetail] Invalid callback data format');
+        return;
+    }
+
+    const transferId = parseInt(match[1]);
+    logger.info('[HandleTransferDetail] Parsed transfer ID:', transferId);
+
+    const transferRepo = AppDataSource.getRepository(UserTransfer);
+    const transfer = await transferRepo.findOne({ 
+        where: { id: transferId },
+        relations: ['sender']
+    });
+
+    if (!transfer) {
+        logger.error('[HandleTransferDetail] Transfer not found');
+        await ctx.api.answerCallbackQuery(ctx.callbackQuery.id, { 
+            text: "❌ Transfer not found" 
+        });
+        return;
+    }
+
+    const currencyConfig = CurrencyConverter.getConfig(transfer.currency as InternalCurrency);
+    
+    let detailMessage = `🔄 Transfer Details\n\n` +
+        `💰 Amount: ${formatNumber(transfer.amount)} ${currencyConfig.emoji} ${currencyConfig.name}\n` +
+        `👤 Recipient: ${transfer.recipientTelegramId}\n` +
+        `🆔 Transfer ID: ${transfer.transferId}\n` +
+        `📅 Created: ${transfer.createdAt.toLocaleDateString()}\n`;
+
+    await ctx.api.editMessageText(
+        ctx.chat!.id,
+        ctx.callbackQuery.message!.message_id,
+        detailMessage,
+        { reply_markup: createTransferDetailKeyboard(transfer) }
+    );
+}
+
+/**
+ * Handles cheque detail view
+ */
+export async function handleChequeDetail(ctx: BotContext): Promise<void> {
+    logger.info('[HandleChequeDetail] Starting cheque detail view');
+    
+    if (!ctx.callbackQuery?.data) {
+        logger.error('[HandleChequeDetail] No callback data found');
+        return;
+    }
+
+    const match = ctx.callbackQuery.data.match(/cheque_(\d+)/);
+    if (!match) {
+        logger.error('[HandleChequeDetail] Invalid callback data format');
+        return;
+    }
+
+    const chequeId = parseInt(match[1]);
+    logger.info('[HandleChequeDetail] Parsed cheque ID:', chequeId);
+
+    const chequeRepo = AppDataSource.getRepository(UserCheque);
+    let cheque = await chequeRepo.findOne({ 
+        where: { id: chequeId },
+        relations: ['user']
+    });
+
+    // Update status from xRocket Pay if we have chequeId
+    if (cheque && cheque.chequeId) {
+        try {
+            const xrocketPay = XRocketPayService.getInstance();
+            const response = await xrocketPay.getMulticheque(cheque.chequeId);
+            if (response.success && response.data) {
+                // Update local cheque if status or link changed
+                const newStatus = response.data.state;
+                const newLink = response.data.link;
+                if (cheque.status !== newStatus || cheque.link !== newLink) {
+                    await chequeRepo.update(cheque.id, {
+                        status: newStatus,
+                        link: newLink
+                    });
+                    cheque = await chequeRepo.findOne({ where: { id: chequeId }, relations: ['user'] });
+                }
+            }
+        } catch (err) {
+            logger.error('[HandleChequeDetail] Error updating cheque status from xRocket Pay:', err);
+        }
+    }
+
+    if (!cheque) {
+        logger.error('[HandleChequeDetail] Cheque not found before rendering details');
+        await ctx.api.answerCallbackQuery(ctx.callbackQuery.id, { 
+            text: "❌ Cheque not found" 
+        });
+        return;
+    }
+
+    const currencyConfig = CurrencyConverter.getConfig(cheque.currency as InternalCurrency);
+    const statusEmoji = getChequeStatusEmoji(cheque.status);
+    
+    let detailMessage = `🎫 Cheque Details\n\n` +
+        `💰 Amount: ${formatNumber(cheque.amount)} ${currencyConfig.emoji} ${currencyConfig.name}\n` +
+        `👥 Users: ${cheque.usersNumber}\n` +
+        `📊 Status: ${statusEmoji} ${cheque.status}\n` +
+        `🆔 Cheque ID: ${cheque.chequeId}\n` +
+        `📅 Created: ${cheque.createdAt.toLocaleDateString()}\n`;
+
+    await ctx.api.editMessageText(
+        ctx.chat!.id,
+        ctx.callbackQuery.message!.message_id,
+        detailMessage,
+        { reply_markup: createChequeDetailKeyboard(cheque) }
+    );
+}
+
+/**
+ * Get status emoji for cheque status
+ */
+function getChequeStatusEmoji(status: string): string {
+    switch (status) {
+        case 'active': return '⏳';
+        case 'completed': return '✅';
+        case 'draft': return '📝';
+        default: return '❓';
+    }
 } 

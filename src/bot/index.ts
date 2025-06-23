@@ -2,7 +2,7 @@ import { Bot, session } from "grammy";
 import { BotContext } from "../types/bot";
 import { AppDataSource } from "../config/database";
 import { handleStart } from "./handlers/commands";
-import { handleBalance, handleCheckPayment, handleInvoices, handleInvoiceDetail, handleInvoicePagination, handleDeleteInvoice, handleMainMenu, handleWithdraw, handleMyWithdrawals, handleWithdrawTransfer, handleWithdrawMulticheque, handleWithdrawExternal, handleOpenCheque, handleWithdrawalDetail, handleCheckWithdrawalStatus, handleCopyWithdrawalHash } from "./handlers/callbacks";
+import { handleBalance, handleCheckPayment, handleInvoices, handleInvoiceDetail, handleInvoicePagination, handleDeleteInvoice, handleMainMenu, handleWithdraw, handleMyWithdrawals, handleWithdrawTransfer, handleWithdrawMulticheque, handleWithdrawExternal, handleOpenCheque, handleWithdrawalDetail, handleCheckWithdrawalStatus, handleHistoryTransfers, handleHistoryCheques, handleHistoryWithdrawals, handleTransferPagination, handleChequePagination, handleWithdrawalPagination, handleChequeDetail, handleTransferDetail } from "./handlers/callbacks";
 import { handleDepositFlow, handleCurrencySelection, handleAmountInput } from "./conversations/deposit";
 import { handleTransferFlow, handleTransferCurrencySelection, handleTransferAmountInput, handleTransferRecipientInput, handleTransferConfirmation } from "./conversations/transfer";
 import { handleMultichequeCurrencySelection, handleMultichequeAmountInput, handleMultichequeConfirmation } from "./conversations/multicheque";
@@ -57,7 +57,16 @@ bot.callbackQuery("withdrawal_confirm", handleWithdrawalConfirmation);
 // Register withdrawal detail handlers
 bot.callbackQuery(/^withdrawal_/, handleWithdrawalDetail);
 bot.callbackQuery(/^check_withdrawal_/, handleCheckWithdrawalStatus);
-bot.callbackQuery(/^copy_hash_/, handleCopyWithdrawalHash);
+
+// Register history handlers
+bot.callbackQuery("history_transfers", handleHistoryTransfers);
+bot.callbackQuery("history_cheques", handleHistoryCheques);
+bot.callbackQuery("history_withdrawals", handleHistoryWithdrawals);
+bot.callbackQuery(/^transfers_page_/, handleTransferPagination);
+bot.callbackQuery(/^cheques_page_/, handleChequePagination);
+bot.callbackQuery(/^withdrawals_page_/, handleWithdrawalPagination);
+bot.callbackQuery(/^cheque_/, handleChequeDetail);
+bot.callbackQuery(/^transfer_detail_/, handleTransferDetail);
 
 bot.on("message:text", async (ctx) => {
     // Handle amount input for deposit flow

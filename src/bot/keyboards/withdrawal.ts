@@ -64,12 +64,6 @@ export function createWithdrawalDetailKeyboard(withdrawal: UserWithdrawal): Inli
         keyboard.row();
     }
     
-    // Add "Copy Transaction Hash" button if we have a hash
-    if (withdrawal.txHash) {
-        keyboard.text("📋 Copy Hash", `copy_hash_${withdrawal.id}`);
-        keyboard.row();
-    }
-    
     keyboard.text("📊 Back to Withdrawals", "my_withdrawals");
     keyboard.row();
     keyboard.text("🏠 Main Menu", "main_menu");
@@ -87,4 +81,18 @@ function getStatusEmoji(status: string): string {
         case 'FAIL': return '❌';
         default: return '❓';
     }
+}
+
+/**
+ * Creates keyboard for withdrawal history menu
+ */
+export function createWithdrawalHistoryMenuKeyboard(): InlineKeyboard {
+    return new InlineKeyboard()
+        .text("🔄 My Transfers", "history_transfers")
+        .row()
+        .text("🎫 My Cheques", "history_cheques")
+        .row()
+        .text("🌐 My Blockchain Withdrawals", "history_withdrawals")
+        .row()
+        .text("🏠 Main Menu", "main_menu");
 } 
