@@ -6,7 +6,7 @@ import { BotContext } from "../types/bot";
 import { InternalCurrency, CURRENCIES, CurrencyConverter } from "../types/currency";
 import { formatNumber } from "../bot/utils/formatters";
 import { createMainMenuKeyboard } from "../bot/keyboards/main";
-import { DataSource } from "typeorm";
+import { EntityManager } from "typeorm";
 
 export class UserService {
     private static instance: UserService;
@@ -91,14 +91,18 @@ export class UserService {
         user: User, 
         currency: InternalCurrency, 
         amount: number, 
-        manager?: DataSource
+        manager?: EntityManager
     ): Promise<UserBalance> {
         if (typeof amount !== 'number' || isNaN(amount)) {
             throw new Error("Invalid amount provided");
         }
 
         const balanceRepo = manager ? manager.getRepository(UserBalance) : AppDataSource.getRepository(UserBalance);
-        let balance = await this.getUserBalance(user, currency);
+        
+        // Get balance using the same manager
+        let balance = manager 
+            ? await balanceRepo.findOne({ where: { user: { id: user.id }, coin: currency } })
+            : await this.getUserBalance(user, currency);
         
         if (!balance) {
             // Create new balance if it doesn't exist

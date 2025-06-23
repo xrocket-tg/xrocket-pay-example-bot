@@ -1,0 +1,193 @@
+import { AppDataSource } from "../config/database";
+import { UserInvoice } from "../entities/user-invoice";
+import { UserService } from "./user";
+import logger from "../utils/logger";
+import { 
+    InvoicePaymentWebhook
+} from 'xrocket-pay-api-sdk/dist/types/webhook';
+import { 
+    verifyAndParseWebhook,
+    isInvoicePaid,
+    extractPaymentInfo,
+    parseWebhookPayload
+} from 'xrocket-pay-api-sdk/dist/webhook-utils';
+import { CurrencyConverter } from "../types/currency";
+import { Bot, InlineKeyboard } from "grammy";
+import { BotContext } from "../types/bot";
+
+export class WebhookService {
+    private static instance: WebhookService;
+    private userService: UserService;
+    private bot: Bot<BotContext>;
+
+    private constructor(bot: Bot<BotContext>) {
+        this.userService = UserService.getInstance();
+        this.bot = bot;
+    }
+
+    public static getInstance(bot: Bot<BotContext>): WebhookService {
+        if (!WebhookService.instance) {
+            WebhookService.instance = new WebhookService(bot);
+        }
+        return WebhookService.instance;
+    }
+
+    /**
+     * Handles invoice webhook events from xRocket Pay
+     */
+    public async handleInvoiceWebhook(
+        body: string, 
+        signature: string
+    ): Promise<{ success: boolean; message: string }> {
+        logger.info('[WebhookService] Processing invoice webhook');
+
+        try {
+            const secret = process.env.XROCKET_API_KEY;
+            if (!secret) {
+                logger.error('[WebhookService] App token not configured');
+                return { success: false, message: 'App token not configured' };
+            }
+
+            // Verify signature and parse webhook payload
+            const webhook = verifyAndParseWebhook(body, signature, secret);
+            logger.info('[WebhookService] Webhook verified and parsed:', {
+                type: webhook.type,
+                invoiceId: webhook.data.id,
+                status: webhook.data.status
+            });
+
+            // Process the webhook based on invoice status
+            if (isInvoicePaid(webhook)) {
+                return await this.handleInvoicePaid(webhook);
+            } else if (webhook.data.status === 'expired') {
+                return await this.handleInvoiceExpired(webhook);
+            } else {
+                logger.info('[WebhookService] Invoice status unchanged:', webhook.data.status);
+                return { success: true, message: 'Invoice status unchanged' };
+            }
+        } catch (error) {
+            logger.error('[WebhookService] Error processing webhook:', error);
+            return { success: false, message: 'Error processing webhook' };
+        }
+    }
+
+    /**
+     * Handles paid invoice webhook event
+     */
+    private async handleInvoicePaid(webhook: InvoicePaymentWebhook): Promise<{ success: boolean; message: string }> {
+        logger.info('[WebhookService] Processing paid invoice:', webhook.data.id);
+
+        const queryRunner = AppDataSource.createQueryRunner();
+        await queryRunner.connect();
+        await queryRunner.startTransaction();
+
+        try {
+            // Find invoice in database
+            const invoiceRepo = queryRunner.manager.getRepository(UserInvoice);
+            const invoice = await invoiceRepo.findOne({
+                where: { invoiceId: webhook.data.id.toString() },
+                relations: ['user']
+            });
+
+            if (!invoice) {
+                logger.error('[WebhookService] Invoice not found in database:', webhook.data.id);
+                await queryRunner.rollbackTransaction();
+                return { success: false, message: 'Invoice not found' };
+            }
+
+            // Check if invoice is already paid
+            if (invoice.status === 'paid') {
+                logger.info('[WebhookService] Invoice already marked as paid:', webhook.data.id);
+                await queryRunner.rollbackTransaction();
+                return { success: true, message: 'Invoice already paid' };
+            }
+
+            // Extract payment information
+            const paymentInfo = extractPaymentInfo(webhook);
+            logger.info('[WebhookService] Payment info:', paymentInfo);
+
+            // Update invoice status
+            await invoiceRepo.update(invoice.id, {
+                status: 'paid',
+                updatedAt: new Date()
+            });
+
+            // Update user balance with the actual payment amount
+            const amount = paymentInfo.paymentAmount;
+            const internalCurrency = CurrencyConverter.toInternal(webhook.data.currency as any);
+            await this.userService.updateBalance(
+                invoice.user,
+                internalCurrency,
+                amount,
+                queryRunner.manager
+            );
+
+            await queryRunner.commitTransaction();
+            logger.info('[WebhookService] Successfully processed paid invoice:', webhook.data.id);
+
+            // Notify user about successful payment
+            const formattedAmount = parseFloat(invoice.amount.toString());
+            const keyboard = new InlineKeyboard().text("🏠 Main Menu", "main_menu");
+            await this.bot.api.sendMessage(
+                invoice.user.telegramId,
+                `You successfully deposited ${formattedAmount} ${internalCurrency}!`,
+                {
+                    reply_markup: keyboard,
+                },
+            );
+
+            return { success: true, message: 'Invoice paid successfully' };
+        } catch (error) {
+            await queryRunner.rollbackTransaction();
+            logger.error('[WebhookService] Error processing paid invoice:', error);
+            throw error;
+        } finally {
+            await queryRunner.release();
+        }
+    }
+
+    /**
+     * Handles expired invoice webhook event
+     */
+    private async handleInvoiceExpired(webhook: InvoicePaymentWebhook): Promise<{ success: boolean; message: string }> {
+        logger.info('[WebhookService] Processing expired invoice:', webhook.data.id);
+
+        try {
+            // Find and update invoice status
+            const invoiceRepo = AppDataSource.getRepository(UserInvoice);
+            const invoice = await invoiceRepo.findOne({
+                where: { invoiceId: webhook.data.id.toString() }
+            });
+
+            if (!invoice) {
+                logger.error('[WebhookService] Invoice not found in database:', webhook.data.id);
+                return { success: false, message: 'Invoice not found' };
+            }
+
+            // Update invoice status
+            await invoiceRepo.update(invoice.id, {
+                status: 'expired',
+                updatedAt: new Date()
+            });
+
+            logger.info('[WebhookService] Successfully processed expired invoice:', webhook.data.id);
+            return { success: true, message: 'Invoice expired successfully' };
+        } catch (error) {
+            logger.error('[WebhookService] Error processing expired invoice:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Validates webhook payload structure using SDK utilities
+     */
+    public validateWebhookPayload(payload: any): payload is InvoicePaymentWebhook {
+        try {
+            // Use SDK's parse function to validate
+            parseWebhookPayload(JSON.stringify(payload));
+            return true;
+        } catch {
+            return false;
+        }
+    }
+} 
