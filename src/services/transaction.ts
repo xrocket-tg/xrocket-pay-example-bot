@@ -5,7 +5,7 @@ import { UserWithdrawal } from "../entities/user-withdrawal";
 import { UserBalance } from "../entities/user-balance";
 import { UserService } from "./user";
 import { XRocketPayService } from "./xrocket-pay";
-import { InternalCurrency } from "../types/currency";
+import { InternalCurrency, WithdrawalNetwork } from "../types/currency";
 import logger from "../utils/logger";
 import { ErrorHandler, ErrorType } from "../bot/utils/error-handler";
 
@@ -239,6 +239,143 @@ export class TransactionService {
             await queryRunner.commitTransaction();
         } catch (error) {
             await queryRunner.rollbackTransaction();
+            throw error;
+        } finally {
+            await queryRunner.release();
+        }
+    }
+
+    /**
+     * Executes a transfer by creating transfer record and processing it
+     */
+    public async executeTransfer(
+        sender: any,
+        currency: string,
+        amount: number,
+        recipientTelegramId: string
+    ): Promise<UserTransfer> {
+        const queryRunner = AppDataSource.createQueryRunner();
+        await queryRunner.connect();
+        await queryRunner.startTransaction();
+
+        try {
+            logger.info('[TransactionService] Creating transfer record:', {
+                senderId: sender.id,
+                currency,
+                amount,
+                recipientTelegramId
+            });
+
+            // Create transfer record
+            const transferRepo = queryRunner.manager.getRepository(UserTransfer);
+            const transfer = UserTransfer.create(sender, parseInt(recipientTelegramId), null, amount, currency);
+            const savedTransfer = await transferRepo.save(transfer);
+
+            await queryRunner.commitTransaction();
+
+            // Process the transfer (this will handle the xRocket Pay API call and balance updates)
+            await this.processTransfer(savedTransfer);
+
+            return savedTransfer;
+        } catch (error) {
+            await queryRunner.rollbackTransaction();
+            this.errorHandler.logError(error, ErrorType.DATABASE_ERROR, {
+                conversation: 'transaction_service',
+                action: 'execute_transfer',
+                data: { senderId: sender.id, currency, amount, recipientTelegramId }
+            });
+            throw error;
+        } finally {
+            await queryRunner.release();
+        }
+    }
+
+    /**
+     * Executes a withdrawal by creating withdrawal record and processing it
+     */
+    public async executeWithdrawal(
+        user: any,
+        amount: number,
+        currency: string,
+        fee: number,
+        network: string,
+        address: string
+    ): Promise<UserWithdrawal> {
+        const queryRunner = AppDataSource.createQueryRunner();
+        await queryRunner.connect();
+        await queryRunner.startTransaction();
+
+        try {
+            logger.info('[TransactionService] Creating withdrawal record:', {
+                userId: user.id,
+                amount,
+                currency,
+                fee,
+                network,
+                address
+            });
+
+            // Create withdrawal record
+            const withdrawalRepo = queryRunner.manager.getRepository(UserWithdrawal);
+            const withdrawal = UserWithdrawal.create(user, amount, currency, fee, network as WithdrawalNetwork, address);
+            const savedWithdrawal = await withdrawalRepo.save(withdrawal);
+
+            // Update user balance (subtract amount)
+            await this.updateUserBalanceInTransaction(
+                queryRunner,
+                user,
+                currency as InternalCurrency,
+                -amount
+            );
+
+            await queryRunner.commitTransaction();
+
+            // Execute withdrawal via xRocket Pay (outside transaction to avoid lock timeouts)
+            logger.info('[TransactionService] Calling xRocketPay API for withdrawal:', savedWithdrawal.id);
+            const result = await this.xrocketPayService.createWithdrawal(savedWithdrawal);
+
+            // Update withdrawal record with withdrawal ID and status (in a separate transaction)
+            const updateQueryRunner = AppDataSource.createQueryRunner();
+            await updateQueryRunner.connect();
+            await updateQueryRunner.startTransaction();
+
+            try {
+                await updateQueryRunner.manager.getRepository(UserWithdrawal).update(savedWithdrawal.id, {
+                    withdrawalId: result.withdrawalId,
+                    status: 'CREATED' // Initial status from xRocket Pay
+                });
+
+                await updateQueryRunner.commitTransaction();
+
+                // Refresh the withdrawal object to get the updated fields
+                const updatedWithdrawal = await AppDataSource.getRepository(UserWithdrawal).findOne({
+                    where: { id: savedWithdrawal.id }
+                });
+
+                if (!updatedWithdrawal) {
+                    throw new Error('Withdrawal record not found after processing');
+                }
+
+                logger.info('[TransactionService] Withdrawal executed successfully');
+                return updatedWithdrawal;
+            } catch (updateError) {
+                await updateQueryRunner.rollbackTransaction();
+                this.errorHandler.logError(updateError, ErrorType.DATABASE_ERROR, {
+                    conversation: 'transaction_service',
+                    action: 'update_withdrawal_after_api',
+                    data: { withdrawalId: savedWithdrawal.id, apiResult: result }
+                });
+                throw updateError;
+            } finally {
+                await updateQueryRunner.release();
+            }
+        } catch (error) {
+            await queryRunner.rollbackTransaction();
+            this.errorHandler.logError(error, ErrorType.DATABASE_ERROR, {
+                conversation: 'transaction_service',
+                action: 'execute_withdrawal',
+                data: { userId: user.id, amount, currency, fee, network, address }
+            });
             throw error;
         } finally {
             await queryRunner.release();

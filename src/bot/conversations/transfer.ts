@@ -12,6 +12,7 @@ import logger from '../../utils/logger';
 import { TransactionService } from "../../services/transaction";
 import { ValidationService } from "../utils/validation";
 import { ErrorHandler, ErrorType } from "../utils/error-handler";
+import { MessageService } from "../services/message-service";
 
 /**
  * Handles the transfer flow using session-based state management
@@ -21,6 +22,7 @@ export async function handleTransferFlow(ctx: BotContext): Promise<void> {
     
     const validationService = ValidationService.getInstance();
     const errorHandler = ErrorHandler.getInstance();
+    const messageService = MessageService.getInstance();
     
     try {
         if (!validationService.validateCallbackContext(ctx)) {
@@ -42,16 +44,15 @@ export async function handleTransferFlow(ctx: BotContext): Promise<void> {
 
         // Show currency selection
         logger.info('[Transfer] Showing currency selection');
-        await ctx.api.editMessageText(
-            ctx.chat!.id,
-            messageId,
+        await messageService.editMessage(
+            ctx,
             "💱 Select currency for transfer:",
-            { reply_markup: createTransferCurrencyKeyboard() }
+            createTransferCurrencyKeyboard()
         );
 
         // Answer the callback query to remove loading state
         if (ctx.callbackQuery) {
-            await ctx.api.answerCallbackQuery(ctx.callbackQuery.id);
+            await errorHandler.safeAnswerCallbackQuery(ctx);
         }
     } catch (error) {
         await errorHandler.handleConversationFlowError(ctx, error, 'transfer', 'flow_start');
@@ -66,6 +67,7 @@ export async function handleTransferCurrencySelection(ctx: BotContext): Promise<
     
     const validationService = ValidationService.getInstance();
     const errorHandler = ErrorHandler.getInstance();
+    const messageService = MessageService.getInstance();
     
     try {
         if (!validationService.validateCallbackContext(ctx)) {
@@ -91,11 +93,10 @@ export async function handleTransferCurrencySelection(ctx: BotContext): Promise<
 
         // Ask for amount
         logger.info('[Transfer] Asking for amount');
-        await ctx.api.editMessageText(
-            ctx.chat!.id,
-            ctx.callbackQuery!.message!.message_id,
+        await messageService.editMessage(
+            ctx,
             `💵 Enter amount to transfer in ${currencyConfig.emoji} ${currencyConfig.name}:`,
-            { reply_markup: new InlineKeyboard() }
+            new InlineKeyboard()
         );
     } catch (error) {
         await errorHandler.handleConversationFlowError(ctx, error, 'transfer', 'currency_selection');
@@ -110,6 +111,7 @@ export async function handleTransferAmountInput(ctx: BotContext): Promise<void> 
     
     const validationService = ValidationService.getInstance();
     const errorHandler = ErrorHandler.getInstance();
+    const messageService = MessageService.getInstance();
     
     try {
         if (!validationService.validateMessageContext(ctx)) {
@@ -164,9 +166,10 @@ export async function handleTransferAmountInput(ctx: BotContext): Promise<void> 
             formattedAmount: formattedAmount,
             amountType: typeof amount
         });
-        await ctx.reply(
+        await messageService.editMessage(
+            ctx,
             `👤 Enter recipient's Telegram ID:\n\nYour Telegram ID: ${ctx.from?.id}\n\nAmount: ${amount} ${currencyConfig.emoji} ${currencyConfig.name}`,
-            { reply_markup: new InlineKeyboard() }
+            new InlineKeyboard()
         );
     } catch (error) {
         await errorHandler.handleConversationFlowError(ctx, error, 'transfer', 'amount_input');
@@ -180,6 +183,7 @@ export async function handleTransferRecipientInput(ctx: BotContext): Promise<voi
     logger.info('[Transfer] Recipient input received');
     
     const validationService = ValidationService.getInstance();
+    const messageService = MessageService.getInstance();
     
     if (!validationService.validateMessageContext(ctx)) {
         throw new Error("Invalid context for recipient input");
@@ -189,70 +193,65 @@ export async function handleTransferRecipientInput(ctx: BotContext): Promise<voi
     logger.info('[Transfer] Parsed recipient ID:', recipientId);
 
     if (!recipientId) {
-        await ctx.reply(
-            "❌ Invalid Telegram ID. Please enter a valid number.",
-            { reply_markup: createMainMenuKeyboard() }
+        await messageService.showError(
+            ctx,
+            "Invalid Telegram ID. Please enter a valid number."
         );
         return;
     }
 
     if (!validationService.validateSession(ctx, ['selectedCoin', 'transferAmount'])) {
         logger.error('[Transfer] Missing session data');
-        await ctx.reply(
-            "❌ Session data missing. Please start over.",
-            { reply_markup: createMainMenuKeyboard() }
+        await messageService.showError(
+            ctx,
+            "Session data missing. Please start over."
         );
         return;
     }
 
     const selectedCoin = ctx.session.selectedCoin!;
-    const transferAmount = ctx.session.transferAmount!;
-    
-    logger.info('[Transfer] Session data in recipient handler:', {
-        step: ctx.session.step,
-        selectedCoin: ctx.session.selectedCoin,
-        transferAmount: ctx.session.transferAmount
-    });
+    const amount = ctx.session.transferAmount!;
 
-    // Validate recipient ID format
-    const xrocketPay = XRocketPayService.getInstance();
-    const isValidRecipient = await xrocketPay.validateTelegramId(recipientId);
-    if (!isValidRecipient) {
-        await ctx.reply(
-            "❌ Invalid Telegram ID format. Please enter a valid Telegram user ID.",
-            { reply_markup: createMainMenuKeyboard() }
-        );
+    // Get user
+    const userService = UserService.getInstance();
+    const user = await userService.findOrCreateUser(ctx);
+    logger.info('[Transfer] User:', user);
+
+    // Check if user has sufficient balance
+    const balanceValidation = await validationService.validateBalance(user, selectedCoin, amount);
+    if (!balanceValidation.isValid) {
+        await messageService.showError(ctx, balanceValidation.errorMessage!);
         return;
     }
 
     // Store recipient ID in session
-    ctx.session.recipientId = recipientId;
+    ctx.session.transferRecipientId = recipientId;
     ctx.session.step = "transfer_confirmation";
 
     // Show confirmation
     logger.info('[Transfer] Showing confirmation');
     const currencyConfig = CurrencyConverter.getConfig(selectedCoin);
-    const confirmationMessage = `📤 Transfer Confirmation\n\n` +
-        `💰 Amount: ${formatNumber(transferAmount)} ${currencyConfig.emoji} ${currencyConfig.name}\n` +
+    const confirmationMessage = `📋 Transfer Confirmation\n\n` +
+        `💰 Amount: ${formatNumber(amount)} ${currencyConfig.emoji} ${currencyConfig.name}\n` +
         `👤 Recipient ID: ${recipientId}\n\n` +
-        `Are you sure you want to proceed?`;
+        `Please confirm the transfer:`;
 
     const keyboard = new InlineKeyboard()
         .text("✅ Confirm Transfer", "confirm_transfer")
-        .row()
         .text("❌ Cancel", "main_menu");
 
-    await ctx.reply(confirmationMessage, { reply_markup: keyboard });
+    await messageService.editMessage(ctx, confirmationMessage, keyboard);
 }
 
 /**
- * Handles transfer confirmation and execution
+ * Handles transfer confirmation
  */
 export async function handleTransferConfirmation(ctx: BotContext): Promise<void> {
-    logger.info('[Transfer] Confirmation received');
+    logger.info('[Transfer] Transfer confirmation received');
     
     const validationService = ValidationService.getInstance();
     const errorHandler = ErrorHandler.getInstance();
+    const messageService = MessageService.getInstance();
     
     try {
         if (!validationService.validateCallbackContext(ctx)) {
@@ -262,81 +261,48 @@ export async function handleTransferConfirmation(ctx: BotContext): Promise<void>
         // Use safe callback query answering
         await errorHandler.safeAnswerCallbackQuery(ctx);
 
-        if (!validationService.validateSession(ctx, ['selectedCoin', 'transferAmount', 'recipientId'])) {
-            throw new Error("Session data missing. Please start over.");
+        if (!validationService.validateSession(ctx, ['selectedCoin', 'transferAmount', 'transferRecipientId'])) {
+            throw new Error("Missing transfer data. Please start over.");
         }
 
         const selectedCoin = ctx.session.selectedCoin!;
-        const transferAmount = ctx.session.transferAmount!;
-        const recipientId = ctx.session.recipientId!;
-        
-        logger.info('[Transfer] Session data in confirmation handler:', {
-            step: ctx.session.step,
-            selectedCoin: ctx.session.selectedCoin,
-            transferAmount: ctx.session.transferAmount,
-            recipientId: ctx.session.recipientId
-        });
+        const amount = ctx.session.transferAmount!;
+        const recipientId = ctx.session.transferRecipientId!;
 
         // Get user
         const userService = UserService.getInstance();
         const user = await userService.findOrCreateUser(ctx);
         logger.info('[Transfer] User:', user);
 
-        // Create transfer record
-        logger.info('[Transfer] Creating transfer record');
-        const transferRepo = AppDataSource.getRepository(UserTransfer);
-        const transfer = UserTransfer.create(
-            user,
-            recipientId,
-            null, // recipient username (we don't have it)
-            transferAmount,
-            selectedCoin
-        );
-        
-        const savedTransfer = await transferRepo.save(transfer);
-        logger.info('[Transfer] Transfer record created:', savedTransfer);
+        // Check if user has sufficient balance
+        const balanceValidation = await validationService.validateBalance(user, selectedCoin, amount);
+        if (!balanceValidation.isValid) {
+            throw new Error(balanceValidation.errorMessage!);
+        }
 
-        // Execute transfer via TransactionService (ensures transaction safety)
-        logger.info('[Transfer] Executing transfer via TransactionService');
+        // Execute transfer
+        logger.info('[Transfer] Executing transfer');
         const transactionService = TransactionService.getInstance();
-        const result = await transactionService.processTransfer(savedTransfer);
-        logger.info('[Transfer] TransactionService transfer result:', result);
+        const transfer = await transactionService.executeTransfer(user, selectedCoin, amount, recipientId);
+        logger.info('[Transfer] Transfer executed:', transfer);
 
         // Clear session
-        ctx.session.step = undefined;
         ctx.session.selectedCoin = undefined;
         ctx.session.transferAmount = undefined;
-        ctx.session.recipientId = undefined;
+        ctx.session.transferRecipientId = undefined;
+        ctx.session.step = undefined;
 
         // Show success message
         logger.info('[Transfer] Showing success message');
         const currencyConfig = CurrencyConverter.getConfig(selectedCoin);
         const successMessage = `✅ Transfer completed successfully!\n\n` +
-            `💰 Amount: ${formatNumber(transferAmount)} ${currencyConfig.emoji} ${currencyConfig.name}\n` +
+            `💰 Amount: ${formatNumber(amount)} ${currencyConfig.emoji} ${currencyConfig.name}\n` +
             `👤 Recipient ID: ${recipientId}\n` +
-            `🆔 Transfer ID: ${result.transferId}`;
+            `🆔 Transfer ID: ${transfer.id}`;
 
-        await ctx.api.editMessageText(
-            ctx.chat!.id,
-            ctx.callbackQuery!.message!.message_id,
-            successMessage,
-            { reply_markup: createMainMenuKeyboard() }
-        );
-
-        logger.info('[Transfer] Transfer flow completed successfully');
-
+        await messageService.showSuccess(ctx, successMessage, createMainMenuKeyboard());
+        logger.info('[Transfer] Transfer flow completed');
     } catch (error) {
-        // Handle API errors specifically
-        if (error && typeof error === 'object' && 'response' in error) {
-            await errorHandler.handleApiError(
-                ctx, 
-                error, 
-                { conversation: 'transfer', step: 'confirmation', action: 'transfer_execution' },
-                ['step', 'selectedCoin', 'transferAmount', 'recipientId']
-            );
-        } else {
-            // Handle general conversation errors
-            await errorHandler.handleConversationFlowError(ctx, error, 'transfer', 'confirmation');
-        }
+        await errorHandler.handleConversationFlowError(ctx, error, 'transfer', 'confirmation');
     }
 } 

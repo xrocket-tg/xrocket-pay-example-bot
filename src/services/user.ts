@@ -1,13 +1,17 @@
+import { BotContext } from "../types/bot";
 import { AppDataSource } from "../config/database";
 import { User } from "../entities/user";
 import { UserBalance } from "../entities/user-balance";
 import { UserInvoice } from "../entities/user-invoice";
-import { BotContext } from "../types/bot";
-import { InternalCurrency, CurrencyConverter } from "../types/currency";
+import { CurrencyConverter, InternalCurrency } from "../types/currency";
 import { formatNumber } from "../bot/utils/formatters";
 import { createMainMenuKeyboard } from "../bot/keyboards/main";
 import { EntityManager } from "typeorm";
+import { MessageService } from "../bot/services/message-service";
 
+/**
+ * Service for managing user-related operations
+ */
 export class UserService {
     private static instance: UserService;
 
@@ -21,29 +25,24 @@ export class UserService {
     }
 
     /**
-     * Gets or creates a user based on Telegram context
+     * Finds or creates a user based on Telegram context
      * @param ctx - The bot context
      * @returns The user instance
      */
     public async findOrCreateUser(ctx: BotContext): Promise<User> {
-        const userRepo = AppDataSource.getRepository(User);
-        const telegramId = ctx.from?.id;
-        
-        if (!telegramId) {
-            throw new Error("Telegram ID not found in context");
+        if (!ctx.from) {
+            throw new Error("User information not found in context");
         }
 
-        let user = await userRepo.findOne({ where: { telegramId } });
+        const userRepo = AppDataSource.getRepository(User);
+        let user = await userRepo.findOne({ where: { telegramId: ctx.from.id } });
 
-        if (!user && ctx.from) {
-            user = User.create(
-                telegramId,
-                ctx.from.username || `user_${telegramId}`
-            );
+        if (!user) {
+            user = User.create(ctx.from.id, ctx.from.username || `user_${ctx.from.id}`);
             await userRepo.save(user);
         }
 
-        return user!;
+        return user;
     }
 
     /**
@@ -57,13 +56,16 @@ export class UserService {
     }
 
     /**
-     * Gets user balances from database
+     * Gets all user balances
      * @param user - The user instance
      * @returns Array of user balances
      */
     public async getUserBalances(user: User): Promise<UserBalance[]> {
         const balanceRepo = AppDataSource.getRepository(UserBalance);
-        return await balanceRepo.find({ where: { user: { id: user.id } } });
+        return await balanceRepo.find({ 
+            where: { user: { id: user.id } },
+            order: { coin: 'ASC' }
+        });
     }
 
     /**
@@ -258,10 +260,10 @@ export class UserService {
             throw new Error("Chat context not found");
         }
 
+        const messageService = MessageService.getInstance();
         const balances = await this.getUserBalances(user);
         const message = this.formatBalanceMessage(balances);
 
-        const sent = await ctx.reply(message, { reply_markup: createMainMenuKeyboard() });
-        ctx.session.messageId = sent.message_id;
+        await messageService.editMessage(ctx, message, createMainMenuKeyboard());
     }
 } 

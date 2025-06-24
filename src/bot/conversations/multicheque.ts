@@ -11,6 +11,7 @@ import { UserCheque } from "../../entities/user-cheque";
 import logger from "../../utils/logger";
 import { ValidationService } from "../utils/validation";
 import { ErrorHandler, ErrorType } from "../utils/error-handler";
+import { MessageService } from "../services/message-service";
 
 /**
  * Creates inline keyboard for multicheque currency selection
@@ -36,6 +37,7 @@ export async function handleMultichequeFlow(ctx: BotContext): Promise<void> {
     
     const validationService = ValidationService.getInstance();
     const errorHandler = ErrorHandler.getInstance();
+    const messageService = MessageService.getInstance();
     
     try {
         if (!validationService.validateCallbackContext(ctx)) {
@@ -43,7 +45,7 @@ export async function handleMultichequeFlow(ctx: BotContext): Promise<void> {
         }
 
         // Answer the callback query
-        await ctx.api.answerCallbackQuery(ctx.callbackQuery!.id);
+        await errorHandler.safeAnswerCallbackQuery(ctx);
 
         // Initialize session
         ctx.session.step = "multicheque_currency";
@@ -52,13 +54,10 @@ export async function handleMultichequeFlow(ctx: BotContext): Promise<void> {
 
         // Show currency selection
         logger.info('[Multicheque] Showing currency selection');
-        await ctx.api.editMessageText(
-            ctx.chat!.id,
-            ctx.callbackQuery!.message!.message_id,
+        await messageService.editMessage(
+            ctx,
             "🎫 Choose currency for your cheque:",
-            {
-                reply_markup: createMultichequeCurrencyKeyboard()
-            }
+            createMultichequeCurrencyKeyboard()
         );
     } catch (error) {
         await errorHandler.handleConversationFlowError(ctx, error, 'multicheque', 'flow_start');
@@ -73,6 +72,7 @@ export async function handleMultichequeCurrencySelection(ctx: BotContext): Promi
     
     const validationService = ValidationService.getInstance();
     const errorHandler = ErrorHandler.getInstance();
+    const messageService = MessageService.getInstance();
     
     try {
         if (!validationService.validateCallbackContext(ctx)) {
@@ -106,11 +106,10 @@ export async function handleMultichequeCurrencySelection(ctx: BotContext): Promi
         // Ask for amount
         logger.info('[Multicheque] Asking for amount');
         const currencyConfig = CurrencyConverter.getConfig(selectedCoin);
-        await ctx.api.editMessageText(
-            ctx.chat!.id,
-            ctx.callbackQuery!.message!.message_id,
+        await messageService.editMessage(
+            ctx,
             `💰 Enter amount for your cheque:\n\nCurrency: ${currencyConfig.emoji} ${currencyConfig.name}`,
-            { reply_markup: new InlineKeyboard() }
+            new InlineKeyboard()
         );
     } catch (error) {
         await errorHandler.handleConversationFlowError(ctx, error, 'multicheque', 'currency_selection');
@@ -125,6 +124,7 @@ export async function handleMultichequeAmountInput(ctx: BotContext): Promise<voi
     
     const validationService = ValidationService.getInstance();
     const errorHandler = ErrorHandler.getInstance();
+    const messageService = MessageService.getInstance();
     
     try {
         if (!validationService.validateMessageContext(ctx)) {
@@ -171,7 +171,7 @@ export async function handleMultichequeAmountInput(ctx: BotContext): Promise<voi
             .row()
             .text("❌ Cancel", "main_menu");
 
-        await ctx.reply(confirmationMessage, { reply_markup: keyboard });
+        await messageService.editMessage(ctx, confirmationMessage, keyboard);
     } catch (error) {
         await errorHandler.handleConversationFlowError(ctx, error, 'multicheque', 'amount_input');
     }
@@ -185,6 +185,7 @@ export async function handleMultichequeConfirmation(ctx: BotContext): Promise<vo
     
     const validationService = ValidationService.getInstance();
     const errorHandler = ErrorHandler.getInstance();
+    const messageService = MessageService.getInstance();
     
     try {
         if (!validationService.validateCallbackContext(ctx)) {
@@ -199,82 +200,54 @@ export async function handleMultichequeConfirmation(ctx: BotContext): Promise<vo
         }
 
         const selectedCoin = ctx.session.selectedCoin!;
-        const multichequeAmount = ctx.session.multichequeAmount!;
+        const amount = ctx.session.multichequeAmount!;
 
         // Get user
         const userService = UserService.getInstance();
         const user = await userService.findOrCreateUser(ctx);
         logger.info('[Multicheque] User:', user);
 
+        // Check if user has sufficient balance
+        const balanceValidation = await validationService.validateBalance(user, selectedCoin, amount);
+        if (!balanceValidation.isValid) {
+            throw new Error(balanceValidation.errorMessage!);
+        }
+
         // Create cheque record
         logger.info('[Multicheque] Creating cheque record');
         const chequeRepo = AppDataSource.getRepository(UserCheque);
-        const cheque = UserCheque.create(
-            user,
-            multichequeAmount,
-            selectedCoin,
-            1 // Single user cheque
-        );
-        
+        const cheque = UserCheque.create(user, amount, selectedCoin, 1);
         const savedCheque = await chequeRepo.save(cheque);
         logger.info('[Multicheque] Cheque record created:', savedCheque);
 
-        // Execute multicheque creation via xRocket Pay
-        logger.info('[Multicheque] Creating multicheque via xRocket Pay');
+        // Create multicheque via XRocketPay
+        logger.info('[Multicheque] Creating multicheque via XRocketPay');
         const xrocketPay = XRocketPayService.getInstance();
-        const result = await xrocketPay.createMulticheque(savedCheque);
-        logger.info('[Multicheque] xRocket Pay multicheque result:', result);
+        const { chequeId, link } = await xrocketPay.createMulticheque(cheque);
+        logger.info('[Multicheque] XRocketPay response:', { chequeId, link });
 
-        // Update user balance (subtract amount)
-        logger.info('[Multicheque] Updating user balance');
-        await userService.updateBalance(user, selectedCoin, -multichequeAmount);
-
-        // Reload cheque to get updated data
-        const updatedCheque = await chequeRepo.findOne({ 
-            where: { id: savedCheque.id },
-            relations: ['user']
-        });
-        
-        if (!updatedCheque) {
-            throw new Error('Failed to reload cheque data');
-        }
+        // Update cheque with payment details
+        savedCheque.chequeId = chequeId;
+        savedCheque.link = link;
+        const updatedCheque = await chequeRepo.save(savedCheque);
+        logger.info('[Multicheque] Cheque updated:', updatedCheque);
 
         // Clear session
-        ctx.session.step = undefined;
         ctx.session.selectedCoin = undefined;
         ctx.session.multichequeAmount = undefined;
+        ctx.session.step = undefined;
 
-        // Show cheque details page
-        logger.info('[Multicheque] Showing cheque details');
+        // Show success message
+        logger.info('[Multicheque] Showing success message');
         const currencyConfig = CurrencyConverter.getConfig(selectedCoin);
-        const detailMessage = `🎫 Cheque Details\n\n` +
-            `💰 Amount: ${multichequeAmount} ${currencyConfig.emoji} ${currencyConfig.name}\n` +
-            `👥 Users: 1\n` +
-            `🆔 Cheque ID: ${result.chequeId}\n` +
-            `📅 Created: ${updatedCheque.createdAt.toLocaleDateString()}\n\n` +
-            `🔗 Cheque Link:\n${result.link}`;
+        const successMessage = `✅ Cheque created successfully!\n\n` +
+            `💰 Amount: ${formatNumber(amount)} ${currencyConfig.emoji} ${currencyConfig.name}\n` +
+            `🆔 Cheque ID: ${chequeId}\n` +
+            `🔗 Cheque URL: ${link}`;
 
-        await ctx.api.editMessageText(
-            ctx.chat!.id,
-            ctx.callbackQuery!.message!.message_id,
-            detailMessage,
-            { reply_markup: createChequeDetailKeyboard(updatedCheque) }
-        );
-
-        logger.info('[Multicheque] Multicheque flow completed successfully');
-
+        await messageService.showSuccess(ctx, successMessage, createChequeDetailKeyboard(updatedCheque));
+        logger.info('[Multicheque] Multicheque flow completed');
     } catch (error) {
-        // Handle API errors specifically
-        if (error && typeof error === 'object' && 'response' in error) {
-            await errorHandler.handleApiError(
-                ctx, 
-                error, 
-                { conversation: 'multicheque', step: 'confirmation', action: 'cheque_creation' },
-                ['step', 'selectedCoin', 'multichequeAmount']
-            );
-        } else {
-            // Handle general conversation errors
-            await errorHandler.handleConversationFlowError(ctx, error, 'multicheque', 'confirmation');
-        }
+        await errorHandler.handleConversationFlowError(ctx, error, 'multicheque', 'confirmation');
     }
 } 

@@ -2,16 +2,15 @@ import { BotContext } from "../../types/bot";
 import { AppDataSource } from "../../config/database";
 import { UserInvoice } from "../../entities/user-invoice";
 import { createCoinSelectionKeyboard } from "../keyboards/deposit";
-import { createMainMenuKeyboard } from "../keyboards/main";
-import { formatNumber } from "../utils/formatters";
 import { UserService } from "../../services/user";
-import { CurrencyConverter, InternalCurrency } from "../../types/currency";
+import { CurrencyConverter } from "../../types/currency";
 import { InlineKeyboard } from "grammy";
 import { XRocketPayService } from "../../services/xrocket-pay";
 import logger from '../../utils/logger';
 import { createInvoiceDetailKeyboard } from "../keyboards/invoices";
 import { ValidationService } from "../utils/validation";
 import { ErrorHandler, ErrorType } from "../utils/error-handler";
+import { MessageService } from "../services/message-service";
 
 /**
  * Handles the deposit flow using session-based state management
@@ -21,6 +20,7 @@ export async function handleDepositFlow(ctx: BotContext): Promise<void> {
     
     const validationService = ValidationService.getInstance();
     const errorHandler = ErrorHandler.getInstance();
+    const messageService = MessageService.getInstance();
     
     try {
         if (!validationService.validateCallbackContext(ctx)) {
@@ -42,16 +42,15 @@ export async function handleDepositFlow(ctx: BotContext): Promise<void> {
 
         // Show currency selection
         logger.info('[Deposit] Showing currency selection');
-        await ctx.api.editMessageText(
-            ctx.chat!.id,
-            messageId,
+        await messageService.editMessage(
+            ctx,
             "💱 Select currency for deposit:",
-            { reply_markup: createCoinSelectionKeyboard() }
+            createCoinSelectionKeyboard()
         );
 
         // Answer the callback query to remove loading state
         if (ctx.callbackQuery) {
-            await ctx.api.answerCallbackQuery(ctx.callbackQuery.id);
+            await errorHandler.safeAnswerCallbackQuery(ctx);
         }
     } catch (error) {
         await errorHandler.handleConversationFlowError(ctx, error, 'deposit', 'flow_start');
@@ -66,6 +65,7 @@ export async function handleCurrencySelection(ctx: BotContext): Promise<void> {
     
     const validationService = ValidationService.getInstance();
     const errorHandler = ErrorHandler.getInstance();
+    const messageService = MessageService.getInstance();
     
     try {
         if (!validationService.validateCallbackContext(ctx)) {
@@ -91,11 +91,10 @@ export async function handleCurrencySelection(ctx: BotContext): Promise<void> {
 
         // Ask for amount
         logger.info('[Deposit] Asking for amount');
-        await ctx.api.editMessageText(
-            ctx.chat!.id,
-            ctx.callbackQuery!.message!.message_id,
+        await messageService.editMessage(
+            ctx,
             `💵 Enter amount to deposit in ${currencyConfig.emoji} ${currencyConfig.name}:`,
-            { reply_markup: new InlineKeyboard() }
+            new InlineKeyboard()
         );
     } catch (error) {
         await errorHandler.handleConversationFlowError(ctx, error, 'deposit', 'currency_selection');
@@ -110,6 +109,7 @@ export async function handleAmountInput(ctx: BotContext): Promise<void> {
     
     const validationService = ValidationService.getInstance();
     const errorHandler = ErrorHandler.getInstance();
+    const messageService = MessageService.getInstance();
     
     try {
         if (!validationService.validateMessageContext(ctx)) {
@@ -161,7 +161,11 @@ export async function handleAmountInput(ctx: BotContext): Promise<void> {
         // Show invoice details
         logger.info('[Deposit] Showing invoice details');
         const detailMessage = userService.formatInvoiceDetailMessage(invoice);
-        await ctx.reply(detailMessage, { reply_markup: createInvoiceDetailKeyboard(invoice) });
+        await messageService.editMessage(
+            ctx,
+            detailMessage,
+            createInvoiceDetailKeyboard(invoice)
+        );
         logger.info('[Deposit] Deposit flow completed');
     } catch (error) {
         await errorHandler.handleConversationFlowError(ctx, error, 'deposit', 'amount_input');

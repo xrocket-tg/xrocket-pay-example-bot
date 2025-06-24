@@ -12,6 +12,7 @@ import { createWithdrawalDetailKeyboard } from "../keyboards/withdrawal";
 import { TransactionService } from "../../services/transaction";
 import { ValidationService } from "../utils/validation";
 import { ErrorHandler, ErrorType } from "../utils/error-handler";
+import { MessageService } from "../services/message-service";
 
 const errorHandler = ErrorHandler.getInstance();
 
@@ -57,24 +58,24 @@ export async function handleExternalWithdrawalFlow(ctx: BotContext): Promise<voi
     logger.info('[Withdrawal] Starting external withdrawal flow');
     
     const validationService = ValidationService.getInstance();
+    const messageService = MessageService.getInstance();
     
     try {
         if (!validationService.validateCallbackContext(ctx)) {
             throw new Error("Invalid context for withdrawal flow");
         }
         
-        await ctx.api.answerCallbackQuery(ctx.callbackQuery!.id);
+        await errorHandler.safeAnswerCallbackQuery(ctx);
         ctx.session.step = "withdrawal_currency";
         ctx.session.selectedCoin = undefined;
         ctx.session.withdrawalAmount = undefined;
         ctx.session.withdrawalNetwork = undefined;
         ctx.session.withdrawalAddress = undefined;
         ctx.session.withdrawalFee = undefined;
-        await ctx.api.editMessageText(
-            ctx.chat!.id,
-            ctx.callbackQuery!.message!.message_id,
+        await messageService.editMessage(
+            ctx,
             "💸 Choose currency to withdraw:",
-            { reply_markup: createWithdrawalCurrencyKeyboard() }
+            createWithdrawalCurrencyKeyboard()
         );
     } catch (error) {
         await errorHandler.handleConversationFlowError(ctx, error, 'external_withdrawal', 'flow_start');
@@ -85,6 +86,7 @@ export async function handleWithdrawalCurrencySelection(ctx: BotContext): Promis
     logger.info('[Withdrawal] Currency selection received');
     
     const validationService = ValidationService.getInstance();
+    const messageService = MessageService.getInstance();
     
     try {
         if (!validationService.validateCallbackContext(ctx)) {
@@ -109,11 +111,10 @@ export async function handleWithdrawalCurrencySelection(ctx: BotContext): Promis
         const currencyConfig = CurrencyConverter.getConfig(selectedCoin);
         
         const networkKeyboard = await createWithdrawalNetworkKeyboard(selectedCoin);
-        await ctx.api.editMessageText(
-            ctx.chat!.id,
-            ctx.callbackQuery!.message!.message_id,
+        await messageService.editMessage(
+            ctx,
             `🌐 Choose network for ${currencyConfig.emoji} ${currencyConfig.name}:`,
-            { reply_markup: networkKeyboard }
+            networkKeyboard
         );
     } catch (error) {
         await errorHandler.handleConversationFlowError(ctx, error, 'external_withdrawal', 'currency_selection');
@@ -124,6 +125,7 @@ export async function handleWithdrawalNetworkSelection(ctx: BotContext): Promise
     logger.info('[Withdrawal] Network selection received');
     
     const validationService = ValidationService.getInstance();
+    const messageService = MessageService.getInstance();
     
     try {
         if (!validationService.validateCallbackContext(ctx)) {
@@ -184,14 +186,13 @@ export async function handleWithdrawalNetworkSelection(ctx: BotContext): Promise
         const currencyConfig = CurrencyConverter.getConfig(selectedCoin);
         const maxWithdrawal = Math.max(0, currentBalance - fee);
         
-        await ctx.api.editMessageText(
-            ctx.chat!.id,
-            ctx.callbackQuery!.message!.message_id,
+        await messageService.editMessage(
+            ctx,
             `💰 Your ${currencyConfig.emoji} ${currencyConfig.name} balance: ${formatNumber(currentBalance)}\n` +
             `💸 Withdrawal fee (${network}): ${formatNumber(fee)} ${currencyConfig.name}\n` +
             `📊 Maximum withdrawal: ${formatNumber(maxWithdrawal)} ${currencyConfig.name}\n\n` +
             `💵 Enter amount to withdraw:`,
-            { reply_markup: new InlineKeyboard() }
+            new InlineKeyboard()
         );
     } catch (error) {
         await errorHandler.handleConversationFlowError(ctx, error, 'external_withdrawal', 'network_selection');
@@ -202,6 +203,7 @@ export async function handleWithdrawalAmountInput(ctx: BotContext): Promise<void
     logger.info('[Withdrawal] Amount input received');
     
     const validationService = ValidationService.getInstance();
+    const messageService = MessageService.getInstance();
     
     try {
         if (!validationService.validateMessageContext(ctx)) {
@@ -233,12 +235,13 @@ export async function handleWithdrawalAmountInput(ctx: BotContext): Promise<void
         ctx.session.step = "withdrawal_address";
         const currencyConfig = CurrencyConverter.getConfig(selectedCoin);
         const network = ctx.session.withdrawalNetwork;
-        await ctx.reply(
+        await messageService.editMessage(
+            ctx,
             `💸 Withdrawal amount: ${formatNumber(amount)} ${currencyConfig.emoji} ${currencyConfig.name}\n` +
             `💸 Fee: ${formatNumber(fee)} ${currencyConfig.emoji} ${currencyConfig.name}\n` +
             `💰 Total amount: ${formatNumber(withdrawalValidation.totalRequired)} ${currencyConfig.emoji} ${currencyConfig.name}\n\n` +
             `🔗 Enter the external wallet address for ${network}:`,
-            { reply_markup: new InlineKeyboard() }
+            new InlineKeyboard()
         );
     } catch (error) {
         await errorHandler.handleConversationFlowError(ctx, error, 'external_withdrawal', 'amount_input');
@@ -249,6 +252,7 @@ export async function handleWithdrawalAddressInput(ctx: BotContext): Promise<voi
     logger.info('[Withdrawal] Address input received');
     
     const validationService = ValidationService.getInstance();
+    const messageService = MessageService.getInstance();
     
     try {
         if (!validationService.validateMessageContext(ctx)) {
@@ -274,7 +278,8 @@ export async function handleWithdrawalAddressInput(ctx: BotContext): Promise<voi
         const network = ctx.session.withdrawalNetwork as WithdrawalNetwork;
         const totalAmount = amount + fee;
         
-        await ctx.reply(
+        await messageService.editMessage(
+            ctx,
             `⚠️ Please confirm your withdrawal:\n\n` +
             `💰 Amount: ${formatNumber(amount)} ${selectedCoin}\n` +
             `💸 Fee: ${formatNumber(fee)} ${selectedCoin}\n` +
@@ -282,12 +287,10 @@ export async function handleWithdrawalAddressInput(ctx: BotContext): Promise<voi
             `🌐 Network: ${network}\n` +
             `🔗 Address: ${address}\n\n` +
             `Do you want to proceed?`,
-            {
-                reply_markup: new InlineKeyboard()
-                    .text('✅ Confirm', 'withdrawal_confirm')
-                    .row()
-                    .text('❌ Cancel', 'main_menu')
-            }
+            new InlineKeyboard()
+                .text('✅ Confirm', 'withdrawal_confirm')
+                .row()
+                .text('❌ Cancel', 'main_menu')
         );
     } catch (error) {
         await errorHandler.handleConversationFlowError(ctx, error, 'external_withdrawal', 'address_input');
@@ -298,13 +301,15 @@ export async function handleWithdrawalConfirmation(ctx: BotContext): Promise<voi
     logger.info('[Withdrawal] Confirmation received');
     
     const validationService = ValidationService.getInstance();
+    const messageService = MessageService.getInstance();
     
     try {
         if (!validationService.validateCallbackContext(ctx)) {
             throw new Error("Invalid context for withdrawal confirmation");
         }
         
-        // Use safe callback query answering
+        // Use safe callback query answering with a small delay to prevent timeout
+        await new Promise(resolve => setTimeout(resolve, 100));
         await errorHandler.safeAnswerCallbackQuery(ctx);
         
         if (!validationService.validateSession(ctx, ['selectedCoin', 'withdrawalAmount', 'withdrawalNetwork', 'withdrawalAddress'])) {
@@ -313,7 +318,7 @@ export async function handleWithdrawalConfirmation(ctx: BotContext): Promise<voi
         
         const selectedCoin = ctx.session.selectedCoin!;
         const amount = ctx.session.withdrawalAmount!;
-        const fee = ctx.session.withdrawalFee ?? 0;
+        const fee = ctx.session.withdrawalFee!;
         const network = ctx.session.withdrawalNetwork as WithdrawalNetwork;
         const address = ctx.session.withdrawalAddress!;
         
@@ -321,9 +326,9 @@ export async function handleWithdrawalConfirmation(ctx: BotContext): Promise<voi
         const userService = UserService.getInstance();
         const user = await userService.findOrCreateUser(ctx);
         
-        // Create withdrawal record
-        const withdrawalRepo = AppDataSource.getRepository(UserWithdrawal);
-        const withdrawal = UserWithdrawal.create(
+        // Execute withdrawal via TransactionService (ensures transaction safety)
+        const transactionService = TransactionService.getInstance();
+        const savedWithdrawal = await transactionService.executeWithdrawal(
             user,
             amount,
             selectedCoin,
@@ -331,11 +336,6 @@ export async function handleWithdrawalConfirmation(ctx: BotContext): Promise<voi
             network,
             address
         );
-        const savedWithdrawal = await withdrawalRepo.save(withdrawal);
-        
-        // Execute withdrawal via TransactionService (ensures transaction safety)
-        const transactionService = TransactionService.getInstance();
-        const result = await transactionService.processWithdrawal(savedWithdrawal);
         
         // Show withdrawal details page
         logger.info('[Withdrawal] Showing withdrawal details');
@@ -349,40 +349,28 @@ export async function handleWithdrawalConfirmation(ctx: BotContext): Promise<voi
             `🌐 Network: ${network}\n` +
             `🔗 Address: ${address}\n` +
             `📊 Status: ${statusEmoji} ${savedWithdrawal.status}\n` +
-            `🆔 Withdrawal ID: ${result.withdrawalId}\n` +
+            `🆔 Withdrawal ID: ${savedWithdrawal.withdrawalId || 'Processing...'}\n` +
             `📅 Created: ${savedWithdrawal.createdAt.toLocaleDateString()}`;
 
-        await ctx.api.editMessageText(
-            ctx.chat!.id,
-            ctx.callbackQuery!.message!.message_id,
+        await messageService.editMessage(
+            ctx,
             detailMessage,
-            { reply_markup: createWithdrawalDetailKeyboard(savedWithdrawal) }
+            createWithdrawalDetailKeyboard(savedWithdrawal)
         );
 
         logger.info('[Withdrawal] Withdrawal flow completed successfully');
 
+        // Clear session only on success
+        ctx.session.step = undefined;
+        ctx.session.selectedCoin = undefined;
+        ctx.session.withdrawalAmount = undefined;
+        ctx.session.withdrawalNetwork = undefined;
+        ctx.session.withdrawalAddress = undefined;
+        ctx.session.withdrawalFee = undefined;
+
     } catch (error) {
-        // Handle API errors specifically
-        if (error && typeof error === 'object' && 'response' in error) {
-            await errorHandler.handleApiError(
-                ctx, 
-                error, 
-                { conversation: 'external_withdrawal', step: 'confirmation', action: 'withdrawal_execution' },
-                ['step', 'selectedCoin', 'withdrawalAmount', 'withdrawalNetwork', 'withdrawalAddress', 'withdrawalFee']
-            );
-        } else {
-            // Handle general conversation errors
-            await errorHandler.handleConversationFlowError(ctx, error, 'external_withdrawal', 'confirmation');
-        }
+        await errorHandler.handleConversationFlowError(ctx, error, 'external_withdrawal', 'confirmation');
     }
-    
-    // Clear session
-    ctx.session.step = undefined;
-    ctx.session.selectedCoin = undefined;
-    ctx.session.withdrawalAmount = undefined;
-    ctx.session.withdrawalNetwork = undefined;
-    ctx.session.withdrawalAddress = undefined;
-    ctx.session.withdrawalFee = undefined;
 }
 
 /**

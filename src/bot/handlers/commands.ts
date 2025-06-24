@@ -4,6 +4,7 @@ import { AppDataSource } from "../../config/database";
 import { UserInvoice } from "../../entities/user-invoice";
 import { createInvoiceDetailKeyboard } from "../keyboards/invoices";
 import { ErrorHandler, ErrorType } from "../utils/error-handler";
+import { MessageService } from "../services/message-service";
 import logger from '../../utils/logger';
 
 const errorHandler = ErrorHandler.getInstance();
@@ -13,6 +14,7 @@ const errorHandler = ErrorHandler.getInstance();
  */
 export async function handleStart(ctx: BotContext): Promise<void> {
     const userService = UserService.getInstance();
+    const messageService = MessageService.getInstance();
     const user = await userService.findOrCreateUser(ctx);
     
     // Check if this is a callback from xRocket Pay with invoice parameter
@@ -32,7 +34,7 @@ export async function handleStart(ctx: BotContext): Promise<void> {
             if (invoice) {
                 // Show invoice details
                 const message = userService.formatInvoiceDetailMessage(invoice);
-                await ctx.reply(message, { reply_markup: createInvoiceDetailKeyboard(invoice) });
+                await messageService.editMessage(ctx, message, createInvoiceDetailKeyboard(invoice));
                 return;
             }
         } catch (error) {

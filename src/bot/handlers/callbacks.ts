@@ -22,6 +22,7 @@ import { UserTransfer } from "../../entities/user-transfer";
 import { formatNumber } from "../utils/formatters";
 import { ValidationService } from "../utils/validation";
 import { ErrorHandler, ErrorType } from "../utils/error-handler";
+import { MessageService } from "../services/message-service";
 
 const errorHandler = ErrorHandler.getInstance();
 
@@ -56,6 +57,7 @@ export async function handleDeposit(ctx: BotContext): Promise<void> {
  */
 export async function handleMainMenu(ctx: BotContext): Promise<void> {
     const validationService = ValidationService.getInstance();
+    const messageService = MessageService.getInstance();
     
     try {
         if (!validationService.validateCallbackContext(ctx)) {
@@ -68,11 +70,10 @@ export async function handleMainMenu(ctx: BotContext): Promise<void> {
         const balances = await userService.getUserBalances(user);
         const message = userService.formatBalanceMessage(balances);
 
-        await ctx.api.editMessageText(
-            ctx.chat!.id,
-            ctx.callbackQuery!.message!.message_id,
+        await messageService.editMessage(
+            ctx,
             message,
-            { reply_markup: createMainMenuKeyboard() }
+            createMainMenuKeyboard()
         );
     } catch (error) {
         await errorHandler.handleConversationFlowError(ctx, error, 'main_menu', 'button_click');
@@ -84,19 +85,17 @@ export async function handleMainMenu(ctx: BotContext): Promise<void> {
  */
 export async function handleWithdraw(ctx: BotContext): Promise<void> {
     const validationService = ValidationService.getInstance();
+    const messageService = MessageService.getInstance();
     
     try {
         if (!validationService.validateCallbackContext(ctx)) {
             throw new Error("Invalid context for withdraw");
         }
         
-        await ctx.api.editMessageText(
-            ctx.chat!.id,
-            ctx.callbackQuery!.message!.message_id,
+        await messageService.editMessage(
+            ctx,
             "💸 Choose withdrawal option:",
-            {
-                reply_markup: createWithdrawMenuKeyboard()
-            }
+            createWithdrawMenuKeyboard()
         );
     } catch (error) {
         await errorHandler.handleConversationFlowError(ctx, error, 'withdraw', 'button_click');
@@ -108,17 +107,17 @@ export async function handleWithdraw(ctx: BotContext): Promise<void> {
  */
 export async function handleMyWithdrawals(ctx: BotContext): Promise<void> {
     const validationService = ValidationService.getInstance();
+    const messageService = MessageService.getInstance();
     
     try {
         if (!validationService.validateCallbackContext(ctx)) {
             throw new Error("Invalid context for my withdrawals");
         }
         
-        await ctx.api.editMessageText(
-            ctx.chat!.id,
-            ctx.callbackQuery!.message!.message_id,
+        await messageService.editMessage(
+            ctx,
             "📊 My Withdrawals\n\nChoose the type of withdrawal history you want to view:",
-            { reply_markup: createWithdrawalHistoryMenuKeyboard() }
+            createWithdrawalHistoryMenuKeyboard()
         );
     } catch (error) {
         await errorHandler.handleConversationFlowError(ctx, error, 'my_withdrawals', 'button_click');
@@ -130,6 +129,7 @@ export async function handleMyWithdrawals(ctx: BotContext): Promise<void> {
  */
 export async function handleInvoices(ctx: BotContext): Promise<void> {
     const validationService = ValidationService.getInstance();
+    const messageService = MessageService.getInstance();
     
     try {
         if (!validationService.validateCallbackContext(ctx)) {
@@ -141,13 +141,10 @@ export async function handleInvoices(ctx: BotContext): Promise<void> {
         
         const result = await userService.getUserInvoicesWithPagination(user, 0, 5);
         
-        await ctx.api.editMessageText(
-            ctx.chat!.id,
-            ctx.callbackQuery!.message!.message_id,
+        await messageService.editMessage(
+            ctx,
             result.message,
-            {
-                reply_markup: createInvoicesKeyboard(result.invoices, result.allInvoices.length, 0)
-            }
+            createInvoicesKeyboard(result.invoices, result.allInvoices.length, 0)
         );
     } catch (error) {
         await errorHandler.handleConversationFlowError(ctx, error, 'invoices', 'button_click');
@@ -159,6 +156,7 @@ export async function handleInvoices(ctx: BotContext): Promise<void> {
  */
 export async function handleInvoicePagination(ctx: BotContext): Promise<void> {
     const validationService = ValidationService.getInstance();
+    const messageService = MessageService.getInstance();
     
     try {
         if (!validationService.validateCallbackContextWithData(ctx)) {
@@ -176,13 +174,10 @@ export async function handleInvoicePagination(ctx: BotContext): Promise<void> {
         
         const result = await userService.getUserInvoicesWithPagination(user, page, 5);
         
-        await ctx.api.editMessageText(
-            ctx.chat!.id,
-            ctx.callbackQuery!.message!.message_id,
+        await messageService.editMessage(
+            ctx,
             result.message,
-            {
-                reply_markup: createInvoicesKeyboard(result.invoices, result.allInvoices.length, page)
-            }
+            createInvoicesKeyboard(result.invoices, result.allInvoices.length, page)
         );
     } catch (error) {
         await errorHandler.handleConversationFlowError(ctx, error, 'invoice_pagination', 'page_change');
@@ -196,6 +191,7 @@ export async function handleInvoiceDetail(ctx: BotContext): Promise<void> {
     logger.info('[HandleInvoiceDetail] Starting invoice detail view');
     
     const validationService = ValidationService.getInstance();
+    const messageService = MessageService.getInstance();
     
     if (!validationService.validateCallbackContextWithData(ctx)) {
         logger.error('[HandleInvoiceDetail] Invalid context or no callback data');
@@ -232,9 +228,7 @@ export async function handleInvoiceDetail(ctx: BotContext): Promise<void> {
 
     if (!invoice) {
         logger.error('[HandleInvoiceDetail] Invoice not found for ID:', invoiceId);
-        await ctx.reply("❌ Invoice not found", {
-            reply_markup: createMainMenuKeyboard()
-        });
+        await messageService.showError(ctx, "Invoice not found");
         return;
     }
 
@@ -282,22 +276,17 @@ export async function handleInvoiceDetail(ctx: BotContext): Promise<void> {
     });
     if (!updatedInvoice) {
         logger.error('[HandleInvoiceDetail] Updated invoice not found for ID:', invoiceId);
-        await ctx.reply("❌ Invoice not found", {
-            reply_markup: createMainMenuKeyboard()
-        });
+        await messageService.showError(ctx, "Invoice not found");
         return;
     }
 
     const userService = UserService.getInstance();
     const detailMessage = userService.formatInvoiceDetailMessage(updatedInvoice);
     
-    await ctx.api.editMessageText(
-        ctx.chat!.id,
-        ctx.callbackQuery!.message!.message_id,
+    await messageService.editMessage(
+        ctx,
         detailMessage,
-        {
-            reply_markup: createInvoiceDetailKeyboard(updatedInvoice)
-        }
+        createInvoiceDetailKeyboard(updatedInvoice)
     );
 }
 
@@ -306,6 +295,8 @@ export async function handleInvoiceDetail(ctx: BotContext): Promise<void> {
  */
 export async function handleCheckPayment(ctx: BotContext): Promise<void> {
     logger.info('[HandleCheckPayment] Starting payment check');
+    
+    const messageService = MessageService.getInstance();
     
     if (!ctx.callbackQuery?.data) {
         logger.error('[HandleCheckPayment] No callback data found');
@@ -344,7 +335,7 @@ export async function handleCheckPayment(ctx: BotContext): Promise<void> {
 
     if (!invoice) {
         logger.error('[HandleCheckayment] Invoice not found for ID:', invoiceId);
-        await ctx.api.answerCallbackQuery(ctx.callbackQuery.id, { text: "❌ Invoice not found" });
+        await errorHandler.safeAnswerCallbackQuery(ctx, "❌ Invoice not found");
         return;
     }
 
@@ -384,18 +375,15 @@ export async function handleCheckPayment(ctx: BotContext): Promise<void> {
             const message = "✅ Payment confirmed! Your balance has been updated.\n\n" + userService.formatBalanceMessage(balances);
             
             logger.info('[HandleCheckPayment] Sending success message');
-            await ctx.api.editMessageText(
-                ctx.chat!.id,
-                ctx.callbackQuery.message!.message_id,
+            await messageService.editMessage(
+                ctx,
                 message,
-                { reply_markup: createMainMenuKeyboard() }
+                createMainMenuKeyboard()
             );
         } else {
             logger.info('[HandleCheckPayment] Payment not confirmed or already paid');
             // Show alert instead of redirecting
-            await ctx.api.answerCallbackQuery(ctx.callbackQuery.id, { 
-                text: "⏳ Payment is not received yet" 
-            });
+            await errorHandler.safeAnswerCallbackQuery(ctx, "⏳ Payment is not received yet");
         }
     } catch (error) {
         errorHandler.logError(error, ErrorType.API_ERROR, {
@@ -403,9 +391,7 @@ export async function handleCheckPayment(ctx: BotContext): Promise<void> {
             action: 'handle_check_payment',
             data: { invoiceId: invoice.invoiceId }
         });
-        await ctx.api.answerCallbackQuery(ctx.callbackQuery.id, { 
-            text: "❌ Error checking payment status" 
-        });
+        await errorHandler.safeAnswerCallbackQuery(ctx, "❌ Error checking payment status");
     }
 }
 
@@ -413,6 +399,8 @@ export async function handleCheckPayment(ctx: BotContext): Promise<void> {
  * Handles invoice deletion
  */
 export async function handleDeleteInvoice(ctx: BotContext): Promise<void> {
+    const messageService = MessageService.getInstance();
+    
     if (!ctx.callbackQuery?.data) {
         return;
     }
@@ -427,9 +415,7 @@ export async function handleDeleteInvoice(ctx: BotContext): Promise<void> {
     const invoice = await invoiceRepo.findOne({ where: { id: invoiceId } });
 
     if (!invoice) {
-        await ctx.reply("❌ Invoice not found", {
-            reply_markup: createMainMenuKeyboard()
-        });
+        await messageService.showError(ctx, "Invoice not found");
         return;
     }
 
@@ -441,13 +427,10 @@ export async function handleDeleteInvoice(ctx: BotContext): Promise<void> {
     const user = await userService.findOrCreateUser(ctx);
     const result = await userService.getUserInvoicesWithPagination(user, 0, 5);
     
-    await ctx.api.editMessageText(
-        ctx.chat!.id,
-        ctx.callbackQuery.message!.message_id,
+    await messageService.editMessage(
+        ctx,
         "🗑️ Invoice deleted successfully!\n\n" + result.message,
-        {
-            reply_markup: createInvoicesKeyboard(result.invoices, result.allInvoices.length, 0)
-        }
+        createInvoicesKeyboard(result.invoices, result.allInvoices.length, 0)
     );
 }
 
@@ -512,6 +495,8 @@ export async function handleOpenCheque(ctx: BotContext): Promise<void> {
 export async function handleWithdrawalDetail(ctx: BotContext): Promise<void> {
     logger.info('[HandleWithdrawalDetail] Starting withdrawal detail view');
     
+    const messageService = MessageService.getInstance();
+    
     if (!ctx.callbackQuery?.data) {
         logger.error('[HandleWithdrawalDetail] No callback data found');
         return;
@@ -542,9 +527,7 @@ export async function handleWithdrawalDetail(ctx: BotContext): Promise<void> {
 
     if (!withdrawal) {
         logger.error('[HandleWithdrawalDetail] Withdrawal not found for ID:', withdrawalId);
-        await ctx.reply("❌ Withdrawal not found", {
-            reply_markup: createMainMenuKeyboard()
-        });
+        await messageService.showError(ctx, "Withdrawal not found");
         return;
     }
 
@@ -589,9 +572,7 @@ export async function handleWithdrawalDetail(ctx: BotContext): Promise<void> {
     
     if (!updatedWithdrawal) {
         logger.error('[HandleWithdrawalDetail] Failed to reload withdrawal data');
-        await ctx.reply("❌ Error loading withdrawal data", {
-            reply_markup: createMainMenuKeyboard()
-        });
+        await messageService.showError(ctx, "Error loading withdrawal data");
         return;
     }
 
@@ -620,11 +601,10 @@ export async function handleWithdrawalDetail(ctx: BotContext): Promise<void> {
         detailMessage += `💬 Comment: ${updatedWithdrawal.comment}\n`;
     }
 
-    await ctx.api.editMessageText(
-        ctx.chat!.id,
-        ctx.callbackQuery.message!.message_id,
+    await messageService.editMessage(
+        ctx,
         detailMessage,
-        { reply_markup: createWithdrawalDetailKeyboard(updatedWithdrawal) }
+        createWithdrawalDetailKeyboard(updatedWithdrawal)
     );
 }
 
@@ -633,6 +613,8 @@ export async function handleWithdrawalDetail(ctx: BotContext): Promise<void> {
  */
 export async function handleCheckWithdrawalStatus(ctx: BotContext): Promise<void> {
     logger.info('[HandleCheckWithdrawalStatus] Starting withdrawal status check');
+    
+    const messageService = MessageService.getInstance();
     
     if (!ctx.callbackQuery?.data) {
         logger.error('[HandleCheckWithdrawalStatus] No callback data found');
@@ -656,9 +638,7 @@ export async function handleCheckWithdrawalStatus(ctx: BotContext): Promise<void
 
     if (!withdrawal || !withdrawal.withdrawalId) {
         logger.error('[HandleCheckWithdrawalStatus] Withdrawal not found or no xRocket Pay ID');
-        await ctx.api.answerCallbackQuery(ctx.callbackQuery.id, { 
-            text: "❌ Withdrawal not found or no external ID" 
-        });
+        await errorHandler.safeAnswerCallbackQuery(ctx, "❌ Withdrawal not found or no external ID");
         return;
     }
 
@@ -711,28 +691,20 @@ export async function handleCheckWithdrawalStatus(ctx: BotContext): Promise<void
                         detailMessage += `💬 Comment: ${updatedWithdrawal.comment}\n`;
                     }
 
-                    await ctx.api.editMessageText(
-                        ctx.chat!.id,
-                        ctx.callbackQuery.message!.message_id,
+                    await messageService.editMessage(
+                        ctx,
                         detailMessage,
-                        { reply_markup: createWithdrawalDetailKeyboard(updatedWithdrawal) }
+                        createWithdrawalDetailKeyboard(updatedWithdrawal)
                     );
                 }
                 
                 const statusEmoji = getWithdrawalStatusEmoji(newStatus);
-                await ctx.api.answerCallbackQuery(ctx.callbackQuery.id, { 
-                    text: `Status updated: ${statusEmoji} ${newStatus}` 
-                });
+                await errorHandler.safeAnswerCallbackQuery(ctx, `✅ Status updated: ${statusEmoji} ${newStatus}`);
             } else {
-                const statusEmoji = getWithdrawalStatusEmoji(newStatus);
-                await ctx.api.answerCallbackQuery(ctx.callbackQuery.id, { 
-                    text: `Current status: ${statusEmoji} ${newStatus}` 
-                });
+                await errorHandler.safeAnswerCallbackQuery(ctx, "⏳ Status unchanged");
             }
         } else {
-            await ctx.api.answerCallbackQuery(ctx.callbackQuery.id, { 
-                text: "❌ Failed to get status from xRocket Pay" 
-            });
+            await errorHandler.safeAnswerCallbackQuery(ctx, "❌ Failed to get status from external service");
         }
     } catch (error) {
         errorHandler.logError(error, ErrorType.API_ERROR, {
@@ -740,9 +712,7 @@ export async function handleCheckWithdrawalStatus(ctx: BotContext): Promise<void
             action: 'handle_check_withdrawal_status',
             data: { withdrawalId: withdrawal.withdrawalId }
         });
-        await ctx.api.answerCallbackQuery(ctx.callbackQuery.id, { 
-            text: "❌ Error checking withdrawal status" 
-        });
+        await errorHandler.safeAnswerCallbackQuery(ctx, "❌ Error checking withdrawal status");
     }
 }
 
@@ -762,6 +732,7 @@ function getWithdrawalStatusEmoji(status: string): string {
  * Handles transfer history
  */
 export async function handleHistoryTransfers(ctx: BotContext): Promise<void> {
+    const messageService = MessageService.getInstance();
     const userService = UserService.getInstance();
     const user = await userService.findOrCreateUser(ctx);
     
@@ -779,11 +750,10 @@ export async function handleHistoryTransfers(ctx: BotContext): Promise<void> {
         ? `🔄 My Transfers (${allTransfers.length} total)\n\nSelect a transfer to view details:`
         : "🔄 My Transfers\n\nNo transfers found.";
     
-    await ctx.api.editMessageText(
-        ctx.chat!.id,
-        ctx.callbackQuery!.message!.message_id,
+    await messageService.editMessage(
+        ctx,
         message,
-        { reply_markup: createTransfersKeyboard(transfers, allTransfers.length, 0) }
+        createTransfersKeyboard(transfers, allTransfers.length, 0)
     );
 }
 
@@ -791,6 +761,8 @@ export async function handleHistoryTransfers(ctx: BotContext): Promise<void> {
  * Handles transfer pagination
  */
 export async function handleTransferPagination(ctx: BotContext): Promise<void> {
+    const messageService = MessageService.getInstance();
+    
     if (!ctx.callbackQuery?.data) {
         return;
     }
@@ -819,11 +791,10 @@ export async function handleTransferPagination(ctx: BotContext): Promise<void> {
         ? `🔄 My Transfers (${allTransfers.length} total)\n\nSelect a transfer to view details:`
         : "🔄 My Transfers\n\nNo transfers found.";
     
-    await ctx.api.editMessageText(
-        ctx.chat!.id,
-        ctx.callbackQuery.message!.message_id,
+    await messageService.editMessage(
+        ctx,
         message,
-        { reply_markup: createTransfersKeyboard(transfers, allTransfers.length, page) }
+        createTransfersKeyboard(transfers, allTransfers.length, page)
     );
 }
 
@@ -831,6 +802,7 @@ export async function handleTransferPagination(ctx: BotContext): Promise<void> {
  * Handles cheque history
  */
 export async function handleHistoryCheques(ctx: BotContext): Promise<void> {
+    const messageService = MessageService.getInstance();
     const userService = UserService.getInstance();
     const user = await userService.findOrCreateUser(ctx);
     
@@ -848,11 +820,10 @@ export async function handleHistoryCheques(ctx: BotContext): Promise<void> {
         ? `🎫 My Cheques (${allCheques.length} total)\n\nSelect a cheque to view details:`
         : "🎫 My Cheques\n\nNo cheques found.";
     
-    await ctx.api.editMessageText(
-        ctx.chat!.id,
-        ctx.callbackQuery!.message!.message_id,
+    await messageService.editMessage(
+        ctx,
         message,
-        { reply_markup: createChequesKeyboard(cheques, allCheques.length, 0) }
+        createChequesKeyboard(cheques, allCheques.length, 0)
     );
 }
 
@@ -860,6 +831,8 @@ export async function handleHistoryCheques(ctx: BotContext): Promise<void> {
  * Handles cheque pagination
  */
 export async function handleChequePagination(ctx: BotContext): Promise<void> {
+    const messageService = MessageService.getInstance();
+    
     if (!ctx.callbackQuery?.data) {
         return;
     }
@@ -888,11 +861,10 @@ export async function handleChequePagination(ctx: BotContext): Promise<void> {
         ? `🎫 My Cheques (${allCheques.length} total)\n\nSelect a cheque to view details:`
         : "🎫 My Cheques\n\nNo cheques found.";
     
-    await ctx.api.editMessageText(
-        ctx.chat!.id,
-        ctx.callbackQuery.message!.message_id,
+    await messageService.editMessage(
+        ctx,
         message,
-        { reply_markup: createChequesKeyboard(cheques, allCheques.length, page) }
+        createChequesKeyboard(cheques, allCheques.length, page)
     );
 }
 
@@ -900,6 +872,7 @@ export async function handleChequePagination(ctx: BotContext): Promise<void> {
  * Handles withdrawal history
  */
 export async function handleHistoryWithdrawals(ctx: BotContext): Promise<void> {
+    const messageService = MessageService.getInstance();
     const userService = UserService.getInstance();
     const user = await userService.findOrCreateUser(ctx);
     
@@ -917,11 +890,10 @@ export async function handleHistoryWithdrawals(ctx: BotContext): Promise<void> {
         ? `🌐 My Blockchain Withdrawals (${allWithdrawals.length} total)\n\nSelect a withdrawal to view details:`
         : "🌐 My Blockchain Withdrawals\n\nNo withdrawals found.";
     
-    await ctx.api.editMessageText(
-        ctx.chat!.id,
-        ctx.callbackQuery!.message!.message_id,
+    await messageService.editMessage(
+        ctx,
         message,
-        { reply_markup: createWithdrawalsKeyboard(withdrawals, allWithdrawals.length, 0) }
+        createWithdrawalsKeyboard(withdrawals, allWithdrawals.length, 0)
     );
 }
 
@@ -929,6 +901,8 @@ export async function handleHistoryWithdrawals(ctx: BotContext): Promise<void> {
  * Handles withdrawal pagination
  */
 export async function handleWithdrawalPagination(ctx: BotContext): Promise<void> {
+    const messageService = MessageService.getInstance();
+    
     if (!ctx.callbackQuery?.data) {
         return;
     }
@@ -957,11 +931,10 @@ export async function handleWithdrawalPagination(ctx: BotContext): Promise<void>
         ? `🌐 My Blockchain Withdrawals (${allWithdrawals.length} total)\n\nSelect a withdrawal to view details:`
         : "🌐 My Blockchain Withdrawals\n\nNo withdrawals found.";
     
-    await ctx.api.editMessageText(
-        ctx.chat!.id,
-        ctx.callbackQuery.message!.message_id,
+    await messageService.editMessage(
+        ctx,
         message,
-        { reply_markup: createWithdrawalsKeyboard(withdrawals, allWithdrawals.length, page) }
+        createWithdrawalsKeyboard(withdrawals, allWithdrawals.length, page)
     );
 }
 
@@ -971,12 +944,14 @@ export async function handleWithdrawalPagination(ctx: BotContext): Promise<void>
 export async function handleTransferDetail(ctx: BotContext): Promise<void> {
     logger.info('[HandleTransferDetail] Starting transfer detail view');
     
+    const messageService = MessageService.getInstance();
+    
     if (!ctx.callbackQuery?.data) {
         logger.error('[HandleTransferDetail] No callback data found');
         return;
     }
 
-    const match = ctx.callbackQuery.data.match(/transfer_detail_(\d+)/);
+    const match = ctx.callbackQuery.data.match(/transfer_(\d+)/);
     if (!match) {
         logger.error('[HandleTransferDetail] Invalid callback data format');
         return;
@@ -984,34 +959,39 @@ export async function handleTransferDetail(ctx: BotContext): Promise<void> {
 
     const transferId = parseInt(match[1]);
     logger.info('[HandleTransferDetail] Parsed transfer ID:', transferId);
-
+    
     const transferRepo = AppDataSource.getRepository(UserTransfer);
     const transfer = await transferRepo.findOne({ 
         where: { id: transferId },
         relations: ['sender']
     });
 
+    logger.info('[HandleTransferDetail] Found transfer:', transfer ? {
+        id: transfer.id,
+        amount: transfer.amount,
+        currency: transfer.currency,
+        recipientTelegramId: transfer.recipientTelegramId
+    } : 'null');
+
     if (!transfer) {
-        logger.error('[HandleTransferDetail] Transfer not found');
-        await ctx.api.answerCallbackQuery(ctx.callbackQuery.id, { 
-            text: "❌ Transfer not found" 
-        });
+        logger.error('[HandleTransferDetail] Transfer not found for ID:', transferId);
+        await messageService.showError(ctx, "Transfer not found");
         return;
     }
 
+    // Format transfer detail message
     const currencyConfig = CurrencyConverter.getConfig(transfer.currency as InternalCurrency);
     
-    let detailMessage = `🔄 Transfer Details\n\n` +
+    const detailMessage = `🔄 Transfer Details\n\n` +
         `💰 Amount: ${formatNumber(transfer.amount)} ${currencyConfig.emoji} ${currencyConfig.name}\n` +
-        `👤 Recipient: ${transfer.recipientTelegramId}\n` +
-        `🆔 Transfer ID: ${transfer.transferId}\n` +
-        `📅 Created: ${transfer.createdAt.toLocaleDateString()}\n`;
+        `👤 Recipient ID: ${transfer.recipientTelegramId}\n` +
+        `📅 Created: ${transfer.createdAt.toLocaleDateString()}\n` +
+        `🆔 Transfer ID: ${transfer.id}`;
 
-    await ctx.api.editMessageText(
-        ctx.chat!.id,
-        ctx.callbackQuery.message!.message_id,
+    await messageService.editMessage(
+        ctx,
         detailMessage,
-        { reply_markup: createTransferDetailKeyboard(transfer) }
+        createTransferDetailKeyboard(transfer)
     );
 }
 
@@ -1020,6 +1000,8 @@ export async function handleTransferDetail(ctx: BotContext): Promise<void> {
  */
 export async function handleChequeDetail(ctx: BotContext): Promise<void> {
     logger.info('[HandleChequeDetail] Starting cheque detail view');
+    
+    const messageService = MessageService.getInstance();
     
     if (!ctx.callbackQuery?.data) {
         logger.error('[HandleChequeDetail] No callback data found');
@@ -1070,9 +1052,7 @@ export async function handleChequeDetail(ctx: BotContext): Promise<void> {
 
     if (!cheque) {
         logger.error('[HandleChequeDetail] Cheque not found before rendering details');
-        await ctx.api.answerCallbackQuery(ctx.callbackQuery.id, { 
-            text: "❌ Cheque not found" 
-        });
+        await errorHandler.safeAnswerCallbackQuery(ctx, "❌ Cheque not found");
         return;
     }
 
@@ -1086,11 +1066,10 @@ export async function handleChequeDetail(ctx: BotContext): Promise<void> {
         `🆔 Cheque ID: ${cheque.chequeId}\n` +
         `📅 Created: ${cheque.createdAt.toLocaleDateString()}\n`;
 
-    await ctx.api.editMessageText(
-        ctx.chat!.id,
-        ctx.callbackQuery.message!.message_id,
+    await messageService.editMessage(
+        ctx,
         detailMessage,
-        { reply_markup: createChequeDetailKeyboard(cheque) }
+        createChequeDetailKeyboard(cheque)
     );
 }
 
