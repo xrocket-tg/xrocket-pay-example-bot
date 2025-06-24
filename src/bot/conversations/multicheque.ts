@@ -9,6 +9,8 @@ import { formatNumber } from "../utils/formatters";
 import { AppDataSource } from "../../config/database";
 import { UserCheque } from "../../entities/user-cheque";
 import logger from "../../utils/logger";
+import { ValidationService } from "../utils/validation";
+import { ErrorHandler, ErrorType } from "../utils/error-handler";
 
 /**
  * Creates inline keyboard for multicheque currency selection
@@ -32,28 +34,35 @@ function createMultichequeCurrencyKeyboard(): InlineKeyboard {
 export async function handleMultichequeFlow(ctx: BotContext): Promise<void> {
     logger.info('[Multicheque] Starting multicheque flow');
     
-    if (!ctx.chat || !ctx.callbackQuery) {
-        throw new Error("Invalid context for multicheque flow");
-    }
-
-    // Answer the callback query
-    await ctx.api.answerCallbackQuery(ctx.callbackQuery.id);
-
-    // Initialize session
-    ctx.session.step = "multicheque_currency";
-    ctx.session.selectedCoin = undefined;
-    ctx.session.multichequeAmount = undefined;
-
-    // Show currency selection
-    logger.info('[Multicheque] Showing currency selection');
-    await ctx.api.editMessageText(
-        ctx.chat.id,
-        ctx.callbackQuery.message!.message_id,
-        "🎫 Choose currency for your cheque:",
-        {
-            reply_markup: createMultichequeCurrencyKeyboard()
+    const validationService = ValidationService.getInstance();
+    const errorHandler = ErrorHandler.getInstance();
+    
+    try {
+        if (!validationService.validateCallbackContext(ctx)) {
+            throw new Error("Invalid context for multicheque flow");
         }
-    );
+
+        // Answer the callback query
+        await ctx.api.answerCallbackQuery(ctx.callbackQuery!.id);
+
+        // Initialize session
+        ctx.session.step = "multicheque_currency";
+        ctx.session.selectedCoin = undefined;
+        ctx.session.multichequeAmount = undefined;
+
+        // Show currency selection
+        logger.info('[Multicheque] Showing currency selection');
+        await ctx.api.editMessageText(
+            ctx.chat!.id,
+            ctx.callbackQuery!.message!.message_id,
+            "🎫 Choose currency for your cheque:",
+            {
+                reply_markup: createMultichequeCurrencyKeyboard()
+            }
+        );
+    } catch (error) {
+        await errorHandler.handleConversationFlowError(ctx, error, 'multicheque', 'flow_start');
+    }
 }
 
 /**
@@ -62,52 +71,50 @@ export async function handleMultichequeFlow(ctx: BotContext): Promise<void> {
 export async function handleMultichequeCurrencySelection(ctx: BotContext): Promise<void> {
     logger.info('[Multicheque] Currency selection received');
     
-    if (!ctx.chat || !ctx.callbackQuery) {
-        throw new Error("Invalid context for currency selection");
-    }
+    const validationService = ValidationService.getInstance();
+    const errorHandler = ErrorHandler.getInstance();
+    
+    try {
+        if (!validationService.validateCallbackContext(ctx)) {
+            throw new Error("Invalid context for currency selection");
+        }
 
-    // Answer the callback query
-    await ctx.api.answerCallbackQuery(ctx.callbackQuery.id);
+        // Use safe callback query answering
+        await errorHandler.safeAnswerCallbackQuery(ctx);
 
-    if (!ctx.callbackQuery.data) {
-        logger.error('[Multicheque] No callback data found');
-        return;
-    }
+        if (!ctx.callbackQuery!.data) {
+            throw new Error("No callback data found");
+        }
 
-    const match = ctx.callbackQuery.data.match(/multicheque_currency_(.+)/);
-    if (!match) {
-        logger.error('[Multicheque] Invalid callback data format');
-        return;
-    }
+        const match = ctx.callbackQuery.data.match(/multicheque_currency_(.+)/);
+        if (!match) {
+            throw new Error("Invalid callback data format");
+        }
 
-    const selectedCoin = match[1] as InternalCurrency;
-    logger.info('[Multicheque] Selected currency:', selectedCoin);
+        const selectedCoin = validationService.validateCurrency(match[1], "");
+        logger.info('[Multicheque] Selected currency:', selectedCoin);
 
-    // Validate currency
-    if (!CurrencyConverter.isSupportedInternal(selectedCoin)) {
-        logger.error('[Multicheque] Invalid currency:', selectedCoin);
+        // Validate currency
+        if (!selectedCoin) {
+            throw new Error("Invalid currency selected");
+        }
+
+        // Store currency in session
+        ctx.session.selectedCoin = selectedCoin;
+        ctx.session.step = "multicheque_amount";
+
+        // Ask for amount
+        logger.info('[Multicheque] Asking for amount');
+        const currencyConfig = CurrencyConverter.getConfig(selectedCoin);
         await ctx.api.editMessageText(
-            ctx.chat.id,
-            ctx.callbackQuery.message!.message_id,
-            "❌ Invalid currency selected. Please try again.",
-            { reply_markup: createMainMenuKeyboard() }
+            ctx.chat!.id,
+            ctx.callbackQuery!.message!.message_id,
+            `💰 Enter amount for your cheque:\n\nCurrency: ${currencyConfig.emoji} ${currencyConfig.name}`,
+            { reply_markup: new InlineKeyboard() }
         );
-        return;
+    } catch (error) {
+        await errorHandler.handleConversationFlowError(ctx, error, 'multicheque', 'currency_selection');
     }
-
-    // Store currency in session
-    ctx.session.selectedCoin = selectedCoin;
-    ctx.session.step = "multicheque_amount";
-
-    // Ask for amount
-    logger.info('[Multicheque] Asking for amount');
-    const currencyConfig = CurrencyConverter.getConfig(selectedCoin);
-    await ctx.api.editMessageText(
-        ctx.chat.id,
-        ctx.callbackQuery.message!.message_id,
-        `💰 Enter amount for your cheque:\n\nCurrency: ${currencyConfig.emoji} ${currencyConfig.name}`,
-        { reply_markup: new InlineKeyboard() }
-    );
 }
 
 /**
@@ -116,64 +123,58 @@ export async function handleMultichequeCurrencySelection(ctx: BotContext): Promi
 export async function handleMultichequeAmountInput(ctx: BotContext): Promise<void> {
     logger.info('[Multicheque] Amount input received');
     
-    if (!ctx.chat || !ctx.message?.text) {
-        throw new Error("Invalid context for amount input");
+    const validationService = ValidationService.getInstance();
+    const errorHandler = ErrorHandler.getInstance();
+    
+    try {
+        if (!validationService.validateMessageContext(ctx)) {
+            throw new Error("Invalid context for amount input");
+        }
+
+        const amount = validationService.validateAmount(ctx.message!.text!);
+        logger.info('[Multicheque] Parsed amount:', amount);
+
+        if (!amount) {
+            throw new Error("Invalid amount. Please enter a positive number.");
+        }
+
+        if (!validationService.validateSession(ctx, ['selectedCoin'])) {
+            throw new Error("No currency selected. Please start over.");
+        }
+
+        const selectedCoin = ctx.session.selectedCoin!;
+
+        // Get user
+        const userService = UserService.getInstance();
+        const user = await userService.findOrCreateUser(ctx);
+        logger.info('[Multicheque] User:', user);
+
+        // Check if user has sufficient balance
+        const balanceValidation = await validationService.validateBalance(user, selectedCoin, amount);
+        if (!balanceValidation.isValid) {
+            throw new Error(balanceValidation.errorMessage!);
+        }
+
+        // Store amount in session
+        ctx.session.multichequeAmount = amount;
+        ctx.session.step = "multicheque_confirmation";
+
+        // Show confirmation
+        logger.info('[Multicheque] Showing confirmation');
+        const currencyConfig = CurrencyConverter.getConfig(selectedCoin);
+        const confirmationMessage = `🎫 Cheque Confirmation\n\n` +
+            `💰 Amount: ${amount} ${currencyConfig.emoji} ${currencyConfig.name}\n\n` +
+            `Are you sure you want to create this cheque?`;
+
+        const keyboard = new InlineKeyboard()
+            .text("✅ Create Cheque", "confirm_multicheque")
+            .row()
+            .text("❌ Cancel", "main_menu");
+
+        await ctx.reply(confirmationMessage, { reply_markup: keyboard });
+    } catch (error) {
+        await errorHandler.handleConversationFlowError(ctx, error, 'multicheque', 'amount_input');
     }
-
-    const amount = parseFloat(ctx.message.text);
-    logger.info('[Multicheque] Parsed amount:', amount);
-
-    if (isNaN(amount) || amount <= 0) {
-        await ctx.reply(
-            "❌ Invalid amount. Please enter a positive number.",
-            { reply_markup: createMainMenuKeyboard() }
-        );
-        return;
-    }
-
-    const selectedCoin = ctx.session.selectedCoin;
-    if (!selectedCoin) {
-        logger.error('[Multicheque] No currency selected in session');
-        await ctx.reply(
-            "❌ No currency selected. Please start over.",
-            { reply_markup: createMainMenuKeyboard() }
-        );
-        return;
-    }
-
-    // Get user
-    const userService = UserService.getInstance();
-    const user = await userService.findOrCreateUser(ctx);
-    logger.info('[Multicheque] User:', user);
-
-    // Check if user has sufficient balance
-    const balance = await userService.getUserBalance(user, selectedCoin);
-    if (!balance || balance.amount < amount) {
-        const availableAmount = balance ? balance.amount : 0;
-        await ctx.reply(
-            `❌ Insufficient balance. You have ${formatNumber(availableAmount)} ${selectedCoin}, but trying to create multicheque for ${formatNumber(amount)} ${selectedCoin}.`,
-            { reply_markup: createMainMenuKeyboard() }
-        );
-        return;
-    }
-
-    // Store amount in session
-    ctx.session.multichequeAmount = amount;
-    ctx.session.step = "multicheque_confirmation";
-
-    // Show confirmation
-    logger.info('[Multicheque] Showing confirmation');
-    const currencyConfig = CurrencyConverter.getConfig(selectedCoin);
-    const confirmationMessage = `🎫 Cheque Confirmation\n\n` +
-        `💰 Amount: ${amount} ${currencyConfig.emoji} ${currencyConfig.name}\n\n` +
-        `Are you sure you want to create this cheque?`;
-
-    const keyboard = new InlineKeyboard()
-        .text("✅ Create Cheque", "confirm_multicheque")
-        .row()
-        .text("❌ Cancel", "main_menu");
-
-    await ctx.reply(confirmationMessage, { reply_markup: keyboard });
 }
 
 /**
@@ -182,33 +183,29 @@ export async function handleMultichequeAmountInput(ctx: BotContext): Promise<voi
 export async function handleMultichequeConfirmation(ctx: BotContext): Promise<void> {
     logger.info('[Multicheque] Confirmation received');
     
-    if (!ctx.chat || !ctx.callbackQuery) {
-        throw new Error("Invalid context for multicheque confirmation");
-    }
-
-    // Answer the callback query
-    await ctx.api.answerCallbackQuery(ctx.callbackQuery.id);
-
-    const selectedCoin = ctx.session.selectedCoin;
-    const multichequeAmount = ctx.session.multichequeAmount;
+    const validationService = ValidationService.getInstance();
+    const errorHandler = ErrorHandler.getInstance();
     
-    if (!selectedCoin || !multichequeAmount) {
-        logger.error('[Multicheque] Missing session data for confirmation');
-        await ctx.api.editMessageText(
-            ctx.chat.id,
-            ctx.callbackQuery.message!.message_id,
-            "❌ Session data missing. Please start over.",
-            { reply_markup: createMainMenuKeyboard() }
-        );
-        return;
-    }
-
-    // Get user
-    const userService = UserService.getInstance();
-    const user = await userService.findOrCreateUser(ctx);
-    logger.info('[Multicheque] User:', user);
-
     try {
+        if (!validationService.validateCallbackContext(ctx)) {
+            throw new Error("Invalid context for multicheque confirmation");
+        }
+
+        // Use safe callback query answering
+        await errorHandler.safeAnswerCallbackQuery(ctx);
+
+        if (!validationService.validateSession(ctx, ['selectedCoin', 'multichequeAmount'])) {
+            throw new Error("Session data missing. Please start over.");
+        }
+
+        const selectedCoin = ctx.session.selectedCoin!;
+        const multichequeAmount = ctx.session.multichequeAmount!;
+
+        // Get user
+        const userService = UserService.getInstance();
+        const user = await userService.findOrCreateUser(ctx);
+        logger.info('[Multicheque] User:', user);
+
         // Create cheque record
         logger.info('[Multicheque] Creating cheque record');
         const chequeRepo = AppDataSource.getRepository(UserCheque);
@@ -258,8 +255,8 @@ export async function handleMultichequeConfirmation(ctx: BotContext): Promise<vo
             `🔗 Cheque Link:\n${result.link}`;
 
         await ctx.api.editMessageText(
-            ctx.chat.id,
-            ctx.callbackQuery.message!.message_id,
+            ctx.chat!.id,
+            ctx.callbackQuery!.message!.message_id,
             detailMessage,
             { reply_markup: createChequeDetailKeyboard(updatedCheque) }
         );
@@ -267,31 +264,17 @@ export async function handleMultichequeConfirmation(ctx: BotContext): Promise<vo
         logger.info('[Multicheque] Multicheque flow completed successfully');
 
     } catch (error) {
-        // Log only the relevant error data
+        // Handle API errors specifically
         if (error && typeof error === 'object' && 'response' in error) {
-            const errorResponse = error.response as any;
-            if (errorResponse?.data) {
-                logger.error('[Multicheque] Error during multicheque creation:', {
-                    data: errorResponse.data,
-                    errors: errorResponse.data.errors
-                });
-            } else {
-                logger.error('[Multicheque] Error during multicheque creation:', error);
-            }
+            await errorHandler.handleApiError(
+                ctx, 
+                error, 
+                { conversation: 'multicheque', step: 'confirmation', action: 'cheque_creation' },
+                ['step', 'selectedCoin', 'multichequeAmount']
+            );
         } else {
-            logger.error('[Multicheque] Error during multicheque creation:', error);
+            // Handle general conversation errors
+            await errorHandler.handleConversationFlowError(ctx, error, 'multicheque', 'confirmation');
         }
-        
-        // Clear session
-        ctx.session.step = undefined;
-        ctx.session.selectedCoin = undefined;
-        ctx.session.multichequeAmount = undefined;
-
-        await ctx.api.editMessageText(
-            ctx.chat.id,
-            ctx.callbackQuery.message!.message_id,
-            `❌ Cheque creation failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
-            { reply_markup: createMainMenuKeyboard() }
-        );
     }
 } 

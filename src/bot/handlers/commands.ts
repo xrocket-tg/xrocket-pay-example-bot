@@ -3,7 +3,10 @@ import { UserService } from "../../services/user";
 import { AppDataSource } from "../../config/database";
 import { UserInvoice } from "../../entities/user-invoice";
 import { createInvoiceDetailKeyboard } from "../keyboards/invoices";
+import { ErrorHandler, ErrorType } from "../utils/error-handler";
 import logger from '../../utils/logger';
+
+const errorHandler = ErrorHandler.getInstance();
 
 /**
  * Handles the /start command
@@ -33,7 +36,11 @@ export async function handleStart(ctx: BotContext): Promise<void> {
                 return;
             }
         } catch (error) {
-            logger.error('[HandleStart] Error handling invoice callback:', error);
+            errorHandler.logError(error, ErrorType.DATABASE_ERROR, {
+                conversation: 'commands',
+                action: 'handle_start_invoice',
+                data: { invoiceId }
+            });
         }
     }
     

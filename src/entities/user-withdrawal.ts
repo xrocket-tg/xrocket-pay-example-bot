@@ -1,9 +1,8 @@
 import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, CreateDateColumn, UpdateDateColumn, JoinColumn } from 'typeorm';
 import { User } from './user';
+import { WithdrawalNetwork } from '../types/currency';
 
 export type WithdrawalStatus = 'CREATED' | 'COMPLETED' | 'FAIL';
-
-export type WithdrawalNetwork = 'TON' | 'BSC' | 'ETH' | 'BTC' | 'TRX' | 'SOL';
 
 @Entity('user_withdrawals')
 export class UserWithdrawal {

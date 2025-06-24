@@ -14,6 +14,14 @@ export function createMainMenuKeyboard(): InlineKeyboard {
 }
 
 /**
+ * Creates a simple "Main Menu" button for error messages
+ */
+export function createMainMenuButton(): InlineKeyboard {
+    return new InlineKeyboard()
+        .text("🏠 Main Menu", "main_menu");
+}
+
+/**
  * Creates inline keyboard for withdraw submenu
  */
 export function createWithdrawMenuKeyboard(): InlineKeyboard {

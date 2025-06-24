@@ -13,6 +13,11 @@ export type InternalCurrency = 'TON' | 'USDT' | 'XROCK';
 export type ExternalCurrency = 'TONCOIN' | 'USDT' | 'XROCK';
 
 /**
+ * Supported withdrawal networks
+ */
+export type WithdrawalNetwork = 'TON' | 'BSC' | 'ETH' | 'BTC' | 'TRX' | 'SOL';
+
+/**
  * Currency configuration with all necessary metadata
  */
 export interface CurrencyConfig {

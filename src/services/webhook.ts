@@ -15,15 +15,18 @@ import { CurrencyConverter } from "../types/currency";
 import { Bot, InlineKeyboard } from "grammy";
 import { BotContext } from "../types/bot";
 import { TransactionService } from "./transaction";
+import { ErrorHandler, ErrorType } from "../bot/utils/error-handler";
 
 export class WebhookService {
     private static instance: WebhookService;
     private userService: UserService;
     private bot: Bot<BotContext>;
+    private errorHandler: ErrorHandler;
 
     private constructor(bot: Bot<BotContext>) {
         this.userService = UserService.getInstance();
         this.bot = bot;
+        this.errorHandler = ErrorHandler.getInstance();
     }
 
     public static getInstance(bot: Bot<BotContext>): WebhookService {
@@ -67,7 +70,11 @@ export class WebhookService {
                 return { success: true, message: 'Invoice status unchanged' };
             }
         } catch (error) {
-            logger.error('[WebhookService] Error processing webhook:', error);
+            this.errorHandler.logError(error, ErrorType.API_ERROR, {
+                conversation: 'webhook_service',
+                action: 'handle_invoice_webhook',
+                data: { body: body.substring(0, 100) + '...' }
+            });
             return { success: false, message: 'Error processing webhook' };
         }
     }
@@ -126,7 +133,11 @@ export class WebhookService {
 
             return { success: true, message: 'Invoice paid successfully' };
         } catch (error) {
-            logger.error('[WebhookService] Error processing paid invoice:', error);
+            this.errorHandler.logError(error, ErrorType.DATABASE_ERROR, {
+                conversation: 'webhook_service',
+                action: 'handle_invoice_paid',
+                data: { invoiceId: webhook.data.id }
+            });
             throw error;
         }
     }
@@ -158,7 +169,11 @@ export class WebhookService {
             logger.info('[WebhookService] Successfully processed expired invoice:', webhook.data.id);
             return { success: true, message: 'Invoice expired successfully' };
         } catch (error) {
-            logger.error('[WebhookService] Error processing expired invoice:', error);
+            this.errorHandler.logError(error, ErrorType.DATABASE_ERROR, {
+                conversation: 'webhook_service',
+                action: 'handle_invoice_expired',
+                data: { invoiceId: webhook.data.id }
+            });
             throw error;
         }
     }

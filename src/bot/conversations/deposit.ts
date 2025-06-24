@@ -10,6 +10,8 @@ import { InlineKeyboard } from "grammy";
 import { XRocketPayService } from "../../services/xrocket-pay";
 import logger from '../../utils/logger';
 import { createInvoiceDetailKeyboard } from "../keyboards/invoices";
+import { ValidationService } from "../utils/validation";
+import { ErrorHandler, ErrorType } from "../utils/error-handler";
 
 /**
  * Handles the deposit flow using session-based state management
@@ -17,35 +19,42 @@ import { createInvoiceDetailKeyboard } from "../keyboards/invoices";
 export async function handleDepositFlow(ctx: BotContext): Promise<void> {
     logger.info('[Deposit] Starting deposit flow');
     
-    if (!ctx.chat) {
-        throw new Error("Chat context not found");
-    }
-
-    const userService = UserService.getInstance();
-    const user = await userService.findOrCreateUser(ctx);
-    logger.info('[Deposit] User:', user);
+    const validationService = ValidationService.getInstance();
+    const errorHandler = ErrorHandler.getInstance();
     
-    // Get message ID from callback query
-    const messageId = ctx.callbackQuery?.message?.message_id;
-    logger.info('[Deposit] Message ID:', messageId);
+    try {
+        if (!validationService.validateCallbackContext(ctx)) {
+            throw new Error("Invalid context for deposit flow");
+        }
 
-    if (!messageId) {
-        logger.error('[Deposit] No message ID found');
-        throw new Error("Message ID not found");
-    }
+        const userService = UserService.getInstance();
+        const user = await userService.findOrCreateUser(ctx);
+        logger.info('[Deposit] User:', user);
+        
+        // Get message ID from callback query
+        const messageId = ctx.callbackQuery?.message?.message_id;
+        logger.info('[Deposit] Message ID:', messageId);
 
-    // Show currency selection
-    logger.info('[Deposit] Showing currency selection');
-    await ctx.api.editMessageText(
-        ctx.chat.id,
-        messageId,
-        "💱 Select currency for deposit:",
-        { reply_markup: createCoinSelectionKeyboard() }
-    );
+        if (!messageId) {
+            logger.error('[Deposit] No message ID found');
+            throw new Error("Message ID not found");
+        }
 
-    // Answer the callback query to remove loading state
-    if (ctx.callbackQuery) {
-        await ctx.api.answerCallbackQuery(ctx.callbackQuery.id);
+        // Show currency selection
+        logger.info('[Deposit] Showing currency selection');
+        await ctx.api.editMessageText(
+            ctx.chat!.id,
+            messageId,
+            "💱 Select currency for deposit:",
+            { reply_markup: createCoinSelectionKeyboard() }
+        );
+
+        // Answer the callback query to remove loading state
+        if (ctx.callbackQuery) {
+            await ctx.api.answerCallbackQuery(ctx.callbackQuery.id);
+        }
+    } catch (error) {
+        await errorHandler.handleConversationFlowError(ctx, error, 'deposit', 'flow_start');
     }
 }
 
@@ -55,42 +64,42 @@ export async function handleDepositFlow(ctx: BotContext): Promise<void> {
 export async function handleCurrencySelection(ctx: BotContext): Promise<void> {
     logger.info('[Deposit] Currency selection received');
     
-    if (!ctx.chat || !ctx.callbackQuery) {
-        throw new Error("Invalid context for currency selection");
-    }
-
-    const selectedCoin = ctx.callbackQuery.data?.replace("coin_", "") as InternalCurrency;
-    logger.info('[Deposit] Selected currency:', selectedCoin);
+    const validationService = ValidationService.getInstance();
+    const errorHandler = ErrorHandler.getInstance();
     
-    // Answer the callback query
-    await ctx.api.answerCallbackQuery(ctx.callbackQuery.id);
+    try {
+        if (!validationService.validateCallbackContext(ctx)) {
+            throw new Error("Invalid context for currency selection");
+        }
 
-    if (!selectedCoin || !CurrencyConverter.isSupportedInternal(selectedCoin)) {
-        logger.error('[Deposit] Invalid currency selected:', selectedCoin);
+        const selectedCoin = validationService.validateCurrency(ctx.callbackQuery!.data, "coin_");
+        logger.info('[Deposit] Selected currency:', selectedCoin);
+        
+        // Use safe callback query answering
+        await errorHandler.safeAnswerCallbackQuery(ctx);
+
+        if (!selectedCoin) {
+            throw new Error("Invalid currency selected");
+        }
+
+        const currencyConfig = CurrencyConverter.getConfig(selectedCoin);
+        logger.info('[Deposit] Currency config:', currencyConfig);
+
+        // Store selected currency in session
+        ctx.session.selectedCoin = selectedCoin;
+        ctx.session.step = "deposit_amount";
+
+        // Ask for amount
+        logger.info('[Deposit] Asking for amount');
         await ctx.api.editMessageText(
-            ctx.chat.id,
-            ctx.callbackQuery.message!.message_id,
-            "❌ Invalid currency selected. Please try again.",
-            { reply_markup: createMainMenuKeyboard() }
+            ctx.chat!.id,
+            ctx.callbackQuery!.message!.message_id,
+            `💵 Enter amount to deposit in ${currencyConfig.emoji} ${currencyConfig.name}:`,
+            { reply_markup: new InlineKeyboard() }
         );
-        return;
+    } catch (error) {
+        await errorHandler.handleConversationFlowError(ctx, error, 'deposit', 'currency_selection');
     }
-
-    const currencyConfig = CurrencyConverter.getConfig(selectedCoin);
-    logger.info('[Deposit] Currency config:', currencyConfig);
-
-    // Store selected currency in session
-    ctx.session.selectedCoin = selectedCoin;
-    ctx.session.step = "deposit_amount";
-
-    // Ask for amount
-    logger.info('[Deposit] Asking for amount');
-    await ctx.api.editMessageText(
-        ctx.chat.id,
-        ctx.callbackQuery.message!.message_id,
-        `💵 Enter amount to deposit in ${currencyConfig.emoji} ${currencyConfig.name}:`,
-        { reply_markup: new InlineKeyboard() }
-    );
 }
 
 /**
@@ -99,63 +108,62 @@ export async function handleCurrencySelection(ctx: BotContext): Promise<void> {
 export async function handleAmountInput(ctx: BotContext): Promise<void> {
     logger.info('[Deposit] Amount input received');
     
-    if (!ctx.chat || !ctx.message?.text) {
-        throw new Error("Invalid context for amount input");
-    }
-
-    const amount = parseFloat(ctx.message.text);
-    logger.info('[Deposit] Parsed amount:', amount);
-
-    if (isNaN(amount) || amount <= 0) {
-        await ctx.reply(
-            "❌ Invalid amount. Please try again.",
-            { reply_markup: createMainMenuKeyboard() }
-        );
-        return;
-    }
-
-    const selectedCoin = ctx.session.selectedCoin;
-    if (!selectedCoin) {
-        logger.error('[Deposit] No currency selected in session');
-        await ctx.reply(
-            "❌ No currency selected. Please start over.",
-            { reply_markup: createMainMenuKeyboard() }
-        );
-        return;
-    }
-
-    // Get user
-    const userService = UserService.getInstance();
-    const user = await userService.findOrCreateUser(ctx);
-    logger.info('[Deposit] User:', user);
-
-    // Create invoice
-    logger.info('[Deposit] Creating invoice');
-    const invoiceRepo = AppDataSource.getRepository(UserInvoice);
-    const invoice = UserInvoice.create(user, amount, selectedCoin);
-    logger.info('[Deposit] Invoice created:', invoice);
+    const validationService = ValidationService.getInstance();
+    const errorHandler = ErrorHandler.getInstance();
     
-    await invoiceRepo.save(invoice);
+    try {
+        if (!validationService.validateMessageContext(ctx)) {
+            throw new Error("Invalid context for amount input");
+        }
 
-    // Generate payment URL
-    logger.info('[Deposit] Generating payment URL');
-    const xrocketPay = XRocketPayService.getInstance();
-    const { paymentUrl, invoiceId } = await xrocketPay.createInvoice(invoice);
-    logger.info('[Deposit] XRocketPay response:', { paymentUrl, invoiceId });
-    
-    // Update invoice with payment details
-    invoice.paymentUrl = paymentUrl;
-    invoice.invoiceId = invoiceId;
-    const savedInvoice = await invoiceRepo.save(invoice);
-    logger.info('[Deposit] Invoice saved:', savedInvoice);
+        const amount = validationService.validateAmount(ctx.message!.text!);
+        logger.info('[Deposit] Parsed amount:', amount);
 
-    // Store invoice ID in session
-    ctx.session.invoiceId = invoiceId;
-    ctx.session.step = undefined; // Clear step
+        if (!amount) {
+            throw new Error("Invalid amount. Please try again.");
+        }
 
-    // Show invoice details
-    logger.info('[Deposit] Showing invoice details');
-    const detailMessage = userService.formatInvoiceDetailMessage(invoice);
-    await ctx.reply(detailMessage, { reply_markup: createInvoiceDetailKeyboard(invoice) });
-    logger.info('[Deposit] Deposit flow completed');
+        if (!validationService.validateSession(ctx, ['selectedCoin'])) {
+            throw new Error("No currency selected. Please start over.");
+        }
+
+        const selectedCoin = ctx.session.selectedCoin!;
+
+        // Get user
+        const userService = UserService.getInstance();
+        const user = await userService.findOrCreateUser(ctx);
+        logger.info('[Deposit] User:', user);
+
+        // Create invoice
+        logger.info('[Deposit] Creating invoice');
+        const invoiceRepo = AppDataSource.getRepository(UserInvoice);
+        const invoice = UserInvoice.create(user, amount, selectedCoin);
+        logger.info('[Deposit] Invoice created:', invoice);
+        
+        await invoiceRepo.save(invoice);
+
+        // Generate payment URL
+        logger.info('[Deposit] Generating payment URL');
+        const xrocketPay = XRocketPayService.getInstance();
+        const { paymentUrl, invoiceId } = await xrocketPay.createInvoice(invoice);
+        logger.info('[Deposit] XRocketPay response:', { paymentUrl, invoiceId });
+        
+        // Update invoice with payment details
+        invoice.paymentUrl = paymentUrl;
+        invoice.invoiceId = invoiceId;
+        const savedInvoice = await invoiceRepo.save(invoice);
+        logger.info('[Deposit] Invoice saved:', savedInvoice);
+
+        // Store invoice ID in session
+        ctx.session.invoiceId = invoiceId;
+        ctx.session.step = undefined; // Clear step
+
+        // Show invoice details
+        logger.info('[Deposit] Showing invoice details');
+        const detailMessage = userService.formatInvoiceDetailMessage(invoice);
+        await ctx.reply(detailMessage, { reply_markup: createInvoiceDetailKeyboard(invoice) });
+        logger.info('[Deposit] Deposit flow completed');
+    } catch (error) {
+        await errorHandler.handleConversationFlowError(ctx, error, 'deposit', 'amount_input');
+    }
 } 

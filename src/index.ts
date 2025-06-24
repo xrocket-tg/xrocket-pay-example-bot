@@ -9,9 +9,12 @@ import { handleTransferFlow, handleTransferCurrencySelection, handleTransferAmou
 import { handleMultichequeCurrencySelection, handleMultichequeAmountInput, handleMultichequeConfirmation } from "./bot/conversations/multicheque";
 import { handleExternalWithdrawalFlow, handleWithdrawalCurrencySelection, handleWithdrawalAmountInput, handleWithdrawalNetworkSelection, handleWithdrawalAddressInput, handleWithdrawalConfirmation } from "./bot/conversations/external-withdrawal";
 import { WebhookService } from "./services/webhook";
+import { ErrorHandler, ErrorType } from "./bot/utils/error-handler";
 import * as dotenv from 'dotenv';
 
 dotenv.config();
+
+const errorHandler = ErrorHandler.getInstance();
 
 /**
  * Creates a new bot instance
@@ -99,7 +102,11 @@ bot.on("message:text", async (ctx) => {
 
 // Error handler
 bot.catch((err) => {
-    console.error("Bot error:", err);
+    errorHandler.logError(err, ErrorType.UNKNOWN_ERROR, {
+        conversation: 'bot_main',
+        action: 'bot_catch',
+        data: { errorType: 'bot_error' }
+    });
 });
 
 /**
@@ -124,7 +131,11 @@ app.post('/webhook/invoice', (req: Request, res: Response) => {
     const body = JSON.stringify(req.body);
 
     if (!signature) {
-        console.error('[Webhook] Missing rocket-pay-signature header');
+        errorHandler.logError(new Error('Missing rocket-pay-signature header'), ErrorType.VALIDATION_ERROR, {
+            conversation: 'webhook_endpoint',
+            action: 'webhook_validation',
+            data: { headers: Object.keys(req.headers) }
+        });
         res.status(400).json({ error: 'Missing signature header' });
         return;
     }
@@ -136,12 +147,20 @@ app.post('/webhook/invoice', (req: Request, res: Response) => {
                 console.log('[Webhook] Successfully processed webhook:', result.message);
                 res.status(200).json({ success: true, message: result.message });
             } else {
-                console.error('[Webhook] Failed to process webhook:', result.message);
+                errorHandler.logError(new Error(result.message), ErrorType.API_ERROR, {
+                    conversation: 'webhook_endpoint',
+                    action: 'webhook_processing_failed',
+                    data: { result }
+                });
                 res.status(400).json({ success: false, message: result.message });
             }
         })
         .catch(error => {
-            console.error('[Webhook] Error processing webhook:', error);
+            errorHandler.logError(error, ErrorType.API_ERROR, {
+                conversation: 'webhook_endpoint',
+                action: 'webhook_processing',
+                data: { body: body.substring(0, 100) + '...' }
+            });
             res.status(500).json({ success: false, message: 'Internal server error' });
         });
 });
@@ -165,7 +184,11 @@ async function bootstrap(): Promise<void> {
         
         console.log("Application started successfully");
     } catch (error) {
-        console.error("Error during startup:", error);
+        errorHandler.logError(error, ErrorType.DATABASE_ERROR, {
+            conversation: 'bootstrap',
+            action: 'application_startup',
+            data: { port: PORT }
+        });
         process.exit(1);
     }
 }

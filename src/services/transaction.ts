@@ -5,17 +5,24 @@ import { UserWithdrawal } from "../entities/user-withdrawal";
 import { UserBalance } from "../entities/user-balance";
 import { UserService } from "./user";
 import { XRocketPayService } from "./xrocket-pay";
-import logger from "../utils/logger";
 import { InternalCurrency } from "../types/currency";
+import logger from "../utils/logger";
+import { ErrorHandler, ErrorType } from "../bot/utils/error-handler";
 
+/**
+ * Transaction Service for handling all database transactions
+ * Ensures data consistency across multiple operations
+ */
 export class TransactionService {
     private static instance: TransactionService;
     private userService: UserService;
     private xrocketPayService: XRocketPayService;
+    private errorHandler: ErrorHandler;
 
     private constructor() {
         this.userService = UserService.getInstance();
         this.xrocketPayService = XRocketPayService.getInstance();
+        this.errorHandler = ErrorHandler.getInstance();
     }
 
     public static getInstance(): TransactionService {
@@ -57,7 +64,11 @@ export class TransactionService {
             logger.info('[TransactionService] Invoice payment processed successfully');
         } catch (error) {
             await queryRunner.rollbackTransaction();
-            logger.error('[TransactionService] Error processing invoice payment:', error);
+            this.errorHandler.logError(error, ErrorType.DATABASE_ERROR, {
+                conversation: 'transaction_service',
+                action: 'process_invoice_payment',
+                data: { invoiceId: invoice.id }
+            });
             throw error;
         } finally {
             await queryRunner.release();
@@ -101,7 +112,11 @@ export class TransactionService {
             return result;
         } catch (error) {
             await queryRunner.rollbackTransaction();
-            logger.error('[TransactionService] Error processing transfer:', error);
+            this.errorHandler.logError(error, ErrorType.API_ERROR, {
+                conversation: 'transaction_service',
+                action: 'process_transfer',
+                data: { transferId: transfer.id }
+            });
             throw error;
         } finally {
             await queryRunner.release();
@@ -147,7 +162,11 @@ export class TransactionService {
             return result;
         } catch (error) {
             await queryRunner.rollbackTransaction();
-            logger.error('[TransactionService] Error processing withdrawal:', error);
+            this.errorHandler.logError(error, ErrorType.API_ERROR, {
+                conversation: 'transaction_service',
+                action: 'process_withdrawal',
+                data: { withdrawalId: withdrawal.id }
+            });
             throw error;
         } finally {
             await queryRunner.release();

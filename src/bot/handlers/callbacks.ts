@@ -20,119 +20,173 @@ import { createTransfersKeyboard, createTransferDetailKeyboard } from "../keyboa
 import { createChequesKeyboard, createChequeDetailKeyboard } from "../keyboards/cheque";
 import { UserTransfer } from "../../entities/user-transfer";
 import { formatNumber } from "../utils/formatters";
+import { ValidationService } from "../utils/validation";
+import { ErrorHandler, ErrorType } from "../utils/error-handler";
+
+const errorHandler = ErrorHandler.getInstance();
 
 /**
  * Handles the main menu balance display
  */
 export async function handleBalance(ctx: BotContext): Promise<void> {
-    const userService = UserService.getInstance();
-    const user = await userService.findOrCreateUser(ctx);
-    await userService.displayBalance(ctx, user);
+    try {
+        const userService = UserService.getInstance();
+        const user = await userService.findOrCreateUser(ctx);
+        await userService.displayBalance(ctx, user);
+    } catch (error) {
+        await errorHandler.handleConversationFlowError(ctx, error, 'balance', 'display');
+    }
 }
 
 /**
  * Handles the deposit button click
  */
 export async function handleDeposit(ctx: BotContext): Promise<void> {
-    const userService = UserService.getInstance();
-    const user = await userService.findOrCreateUser(ctx);
-    await userService.displayBalance(ctx, user);
+    try {
+        const userService = UserService.getInstance();
+        const user = await userService.findOrCreateUser(ctx);
+        await userService.displayBalance(ctx, user);
+    } catch (error) {
+        await errorHandler.handleConversationFlowError(ctx, error, 'deposit', 'button_click');
+    }
 }
 
 /**
  * Handles the main menu button click
  */
 export async function handleMainMenu(ctx: BotContext): Promise<void> {
-    if (!ctx.chat || !ctx.callbackQuery?.message) {
-        throw new Error("Invalid context for main menu");
-    }
-
-    const userService = UserService.getInstance();
-    const user = await userService.findOrCreateUser(ctx);
+    const validationService = ValidationService.getInstance();
     
-    const balances = await userService.getUserBalances(user);
-    const message = userService.formatBalanceMessage(balances);
+    try {
+        if (!validationService.validateCallbackContext(ctx)) {
+            throw new Error("Invalid context for main menu");
+        }
 
-    await ctx.api.editMessageText(
-        ctx.chat.id,
-        ctx.callbackQuery.message.message_id,
-        message,
-        { reply_markup: createMainMenuKeyboard() }
-    );
+        const userService = UserService.getInstance();
+        const user = await userService.findOrCreateUser(ctx);
+        
+        const balances = await userService.getUserBalances(user);
+        const message = userService.formatBalanceMessage(balances);
+
+        await ctx.api.editMessageText(
+            ctx.chat!.id,
+            ctx.callbackQuery!.message!.message_id,
+            message,
+            { reply_markup: createMainMenuKeyboard() }
+        );
+    } catch (error) {
+        await errorHandler.handleConversationFlowError(ctx, error, 'main_menu', 'button_click');
+    }
 }
 
 /**
  * Handles the withdraw button click (shows withdraw submenu)
  */
 export async function handleWithdraw(ctx: BotContext): Promise<void> {
-    await ctx.api.editMessageText(
-        ctx.chat!.id,
-        ctx.callbackQuery!.message!.message_id,
-        "💸 Choose withdrawal option:",
-        {
-            reply_markup: createWithdrawMenuKeyboard()
+    const validationService = ValidationService.getInstance();
+    
+    try {
+        if (!validationService.validateCallbackContext(ctx)) {
+            throw new Error("Invalid context for withdraw");
         }
-    );
+        
+        await ctx.api.editMessageText(
+            ctx.chat!.id,
+            ctx.callbackQuery!.message!.message_id,
+            "💸 Choose withdrawal option:",
+            {
+                reply_markup: createWithdrawMenuKeyboard()
+            }
+        );
+    } catch (error) {
+        await errorHandler.handleConversationFlowError(ctx, error, 'withdraw', 'button_click');
+    }
 }
 
 /**
  * Handles the my withdrawals button click - shows withdrawal history menu
  */
 export async function handleMyWithdrawals(ctx: BotContext): Promise<void> {
-    await ctx.api.editMessageText(
-        ctx.chat!.id,
-        ctx.callbackQuery!.message!.message_id,
-        "📊 My Withdrawals\n\nChoose the type of withdrawal history you want to view:",
-        { reply_markup: createWithdrawalHistoryMenuKeyboard() }
-    );
+    const validationService = ValidationService.getInstance();
+    
+    try {
+        if (!validationService.validateCallbackContext(ctx)) {
+            throw new Error("Invalid context for my withdrawals");
+        }
+        
+        await ctx.api.editMessageText(
+            ctx.chat!.id,
+            ctx.callbackQuery!.message!.message_id,
+            "📊 My Withdrawals\n\nChoose the type of withdrawal history you want to view:",
+            { reply_markup: createWithdrawalHistoryMenuKeyboard() }
+        );
+    } catch (error) {
+        await errorHandler.handleConversationFlowError(ctx, error, 'my_withdrawals', 'button_click');
+    }
 }
 
 /**
  * Handles the my invoices button click
  */
 export async function handleInvoices(ctx: BotContext): Promise<void> {
-    const userService = UserService.getInstance();
-    const user = await userService.findOrCreateUser(ctx);
+    const validationService = ValidationService.getInstance();
     
-    const result = await userService.getUserInvoicesWithPagination(user, 0, 5);
-    
-    await ctx.api.editMessageText(
-        ctx.chat!.id,
-        ctx.callbackQuery!.message!.message_id,
-        result.message,
-        {
-            reply_markup: createInvoicesKeyboard(result.invoices, result.allInvoices.length, 0)
+    try {
+        if (!validationService.validateCallbackContext(ctx)) {
+            throw new Error("Invalid context for invoices");
         }
-    );
+        
+        const userService = UserService.getInstance();
+        const user = await userService.findOrCreateUser(ctx);
+        
+        const result = await userService.getUserInvoicesWithPagination(user, 0, 5);
+        
+        await ctx.api.editMessageText(
+            ctx.chat!.id,
+            ctx.callbackQuery!.message!.message_id,
+            result.message,
+            {
+                reply_markup: createInvoicesKeyboard(result.invoices, result.allInvoices.length, 0)
+            }
+        );
+    } catch (error) {
+        await errorHandler.handleConversationFlowError(ctx, error, 'invoices', 'button_click');
+    }
 }
 
 /**
  * Handles invoice pagination
  */
 export async function handleInvoicePagination(ctx: BotContext): Promise<void> {
-    if (!ctx.callbackQuery?.data) {
-        return;
-    }
-
-    const match = ctx.callbackQuery.data.match(/invoices_page_(\d+)/);
-    if (!match) {
-        return;
-    }
-
-    const page = parseInt(match[1]);
-    const userService = UserService.getInstance();
-    const user = await userService.findOrCreateUser(ctx);
+    const validationService = ValidationService.getInstance();
     
-    const result = await userService.getUserInvoicesWithPagination(user, page, 5);
-    
-    await ctx.api.editMessageText(
-        ctx.chat!.id,
-        ctx.callbackQuery.message!.message_id,
-        result.message,
-        {
-            reply_markup: createInvoicesKeyboard(result.invoices, result.allInvoices.length, page)
+    try {
+        if (!validationService.validateCallbackContextWithData(ctx)) {
+            throw new Error("Invalid context for invoice pagination");
         }
-    );
+
+        const match = ctx.callbackQuery!.data!.match(/invoices_page_(\d+)/);
+        if (!match) {
+            throw new Error("Invalid pagination data format");
+        }
+
+        const page = validationService.validatePositiveNumber(parseInt(match[1])) ? parseInt(match[1]) : 0;
+        const userService = UserService.getInstance();
+        const user = await userService.findOrCreateUser(ctx);
+        
+        const result = await userService.getUserInvoicesWithPagination(user, page, 5);
+        
+        await ctx.api.editMessageText(
+            ctx.chat!.id,
+            ctx.callbackQuery!.message!.message_id,
+            result.message,
+            {
+                reply_markup: createInvoicesKeyboard(result.invoices, result.allInvoices.length, page)
+            }
+        );
+    } catch (error) {
+        await errorHandler.handleConversationFlowError(ctx, error, 'invoice_pagination', 'page_change');
+    }
 }
 
 /**
@@ -141,20 +195,27 @@ export async function handleInvoicePagination(ctx: BotContext): Promise<void> {
 export async function handleInvoiceDetail(ctx: BotContext): Promise<void> {
     logger.info('[HandleInvoiceDetail] Starting invoice detail view');
     
-    if (!ctx.callbackQuery?.data) {
-        logger.error('[HandleInvoiceDetail] No callback data found');
+    const validationService = ValidationService.getInstance();
+    
+    if (!validationService.validateCallbackContextWithData(ctx)) {
+        logger.error('[HandleInvoiceDetail] Invalid context or no callback data');
         return;
     }
 
-    logger.info('[HandleInvoiceDetail] Callback data:', ctx.callbackQuery.data);
+    logger.info('[HandleInvoiceDetail] Callback data:', ctx.callbackQuery!.data);
 
-    const match = ctx.callbackQuery.data.match(/invoice_(\d+)/);
+    const match = ctx.callbackQuery!.data!.match(/invoice_(\d+)/);
     if (!match) {
         logger.error('[HandleInvoiceDetail] Invalid callback data format');
         return;
     }
 
-    const invoiceId = parseInt(match[1]);
+    const invoiceId = validationService.validatePositiveNumber(parseInt(match[1])) ? parseInt(match[1]) : null;
+    if (!invoiceId) {
+        logger.error('[HandleInvoiceDetail] Invalid invoice ID');
+        return;
+    }
+    
     logger.info('[HandleInvoiceDetail] Parsed invoice ID:', invoiceId);
     
     const invoiceRepo = AppDataSource.getRepository(UserInvoice);
@@ -206,7 +267,11 @@ export async function handleInvoiceDetail(ctx: BotContext): Promise<void> {
             });
         }
     } catch (error) {
-        logger.error('[HandleInvoiceDetail] Error fetching invoice status from xRocket Pay:', error);
+        errorHandler.logError(error, ErrorType.API_ERROR, {
+            conversation: 'callback_handlers',
+            action: 'handle_invoice_detail',
+            data: { invoiceId: invoice.invoiceId }
+        });
         // Continue with existing status if API call fails
     }
 
@@ -228,7 +293,7 @@ export async function handleInvoiceDetail(ctx: BotContext): Promise<void> {
     
     await ctx.api.editMessageText(
         ctx.chat!.id,
-        ctx.callbackQuery.message!.message_id,
+        ctx.callbackQuery!.message!.message_id,
         detailMessage,
         {
             reply_markup: createInvoiceDetailKeyboard(updatedInvoice)
@@ -333,7 +398,11 @@ export async function handleCheckPayment(ctx: BotContext): Promise<void> {
             });
         }
     } catch (error) {
-        logger.error('[HandleCheckPayment] Error checking payment:', error);
+        errorHandler.logError(error, ErrorType.API_ERROR, {
+            conversation: 'callback_handlers',
+            action: 'handle_check_payment',
+            data: { invoiceId: invoice.invoiceId }
+        });
         await ctx.api.answerCallbackQuery(ctx.callbackQuery.id, { 
             text: "❌ Error checking payment status" 
         });
@@ -503,7 +572,11 @@ export async function handleWithdrawalDetail(ctx: BotContext): Promise<void> {
                 }
             }
         } catch (error) {
-            logger.error('[HandleWithdrawalDetail] Error fetching withdrawal status from xRocket Pay:', error);
+            errorHandler.logError(error, ErrorType.API_ERROR, {
+                conversation: 'callback_handlers',
+                action: 'handle_withdrawal_detail',
+                data: { withdrawalId: withdrawal.withdrawalId }
+            });
             // Continue with existing status if API call fails
         }
     }
@@ -662,7 +735,11 @@ export async function handleCheckWithdrawalStatus(ctx: BotContext): Promise<void
             });
         }
     } catch (error) {
-        logger.error('[HandleCheckWithdrawalStatus] Error checking withdrawal status:', error);
+        errorHandler.logError(error, ErrorType.API_ERROR, {
+            conversation: 'callback_handlers',
+            action: 'handle_check_withdrawal_status',
+            data: { withdrawalId: withdrawal.withdrawalId }
+        });
         await ctx.api.answerCallbackQuery(ctx.callbackQuery.id, { 
             text: "❌ Error checking withdrawal status" 
         });
@@ -982,7 +1059,12 @@ export async function handleChequeDetail(ctx: BotContext): Promise<void> {
                 }
             }
         } catch (err) {
-            logger.error('[HandleChequeDetail] Error updating cheque status from xRocket Pay:', err);
+            errorHandler.logError(err, ErrorType.API_ERROR, {
+                conversation: 'callback_handlers',
+                action: 'handle_cheque_detail',
+                data: { chequeId: cheque?.chequeId }
+            });
+            // Continue with existing status if API call fails
         }
     }
 

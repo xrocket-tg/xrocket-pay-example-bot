@@ -7,6 +7,10 @@ import { AppDataSource } from '../config/database';
 import { CurrencyConverter, InternalCurrency } from '../types/currency';
 import { CreateChequeDto, SimpleChequeResponse, PaginatedShortChequeDtoResponse } from 'xrocket-pay-api-sdk/dist/types/multicheque';
 import { CreateWithdrawalDto, AppWithdrawalResponse, WithdrawalFeesResponse, WithdrawalStatusResponse } from 'xrocket-pay-api-sdk/dist/types/app';
+import { AvailableCoinsResponse } from 'xrocket-pay-api-sdk/dist/types/currencies';
+import { ErrorHandler, ErrorType } from '../bot/utils/error-handler';
+
+const errorHandler = ErrorHandler.getInstance();
 
 export class XRocketPayService {
     private static instance: XRocketPayService;
@@ -63,7 +67,11 @@ export class XRocketPayService {
                 invoiceId: response.data.id.toString()
             };
         } catch (error) {
-            console.error('Error creating invoice:', error);
+            errorHandler.logError(error, ErrorType.API_ERROR, {
+                conversation: 'xrocket_pay_service',
+                action: 'create_invoice',
+                data: { invoiceId: userInvoice.id, currency: userInvoice.currency }
+            });
             throw error;
         }
     }
@@ -85,7 +93,11 @@ export class XRocketPayService {
             
             return response.data.status;
         } catch (error) {
-            console.error('Error checking invoice status:', error);
+            errorHandler.logError(error, ErrorType.API_ERROR, {
+                conversation: 'xrocket_pay_service',
+                action: 'check_invoice_status',
+                data: { invoiceId }
+            });
             throw error;
         }
     }
@@ -103,7 +115,11 @@ export class XRocketPayService {
 
             return true;
         } catch (error) {
-            console.error('Error deleting invoice:', error);
+            errorHandler.logError(error, ErrorType.API_ERROR, {
+                conversation: 'xrocket_pay_service',
+                action: 'delete_invoice',
+                data: { invoiceId }
+            });
             throw error;
         }
     }
@@ -151,7 +167,11 @@ export class XRocketPayService {
                 transferId: response.data.id.toString()
             };
         } catch (error) {
-            console.error('Error creating transfer:', error);
+            errorHandler.logError(error, ErrorType.API_ERROR, {
+                conversation: 'xrocket_pay_service',
+                action: 'create_transfer',
+                data: { transferId: userTransfer.id, currency: userTransfer.currency }
+            });
             throw error;
         }
     }
@@ -206,7 +226,11 @@ export class XRocketPayService {
                 link: response.data.link
             };
         } catch (error) {
-            console.error('Error creating multicheque:', error);
+            errorHandler.logError(error, ErrorType.API_ERROR, {
+                conversation: 'xrocket_pay_service',
+                action: 'create_multicheque',
+                data: { chequeId: userCheque.id, currency: userCheque.currency }
+            });
             throw error;
         }
     }
@@ -224,7 +248,11 @@ export class XRocketPayService {
 
             return response;
         } catch (error) {
-            console.error('Error getting multicheque:', error);
+            errorHandler.logError(error, ErrorType.API_ERROR, {
+                conversation: 'xrocket_pay_service',
+                action: 'get_multicheque',
+                data: { chequeId }
+            });
             throw error;
         }
     }
@@ -242,7 +270,11 @@ export class XRocketPayService {
 
             return response;
         } catch (error) {
-            console.error('Error getting multicheques:', error);
+            errorHandler.logError(error, ErrorType.API_ERROR, {
+                conversation: 'xrocket_pay_service',
+                action: 'get_multicheques',
+                data: { params }
+            });
             throw error;
         }
     }
@@ -266,7 +298,11 @@ export class XRocketPayService {
 
             return true;
         } catch (error) {
-            console.error('Error validating Telegram ID:', error);
+            errorHandler.logError(error, ErrorType.VALIDATION_ERROR, {
+                conversation: 'xrocket_pay_service',
+                action: 'validate_telegram_id',
+                data: { telegramId }
+            });
             return false;
         }
     }
@@ -322,7 +358,61 @@ export class XRocketPayService {
                 withdrawalId: response.data.withdrawalId
             };
         } catch (error) {
-            console.error('Error creating withdrawal:', error);
+            errorHandler.logError(error, ErrorType.API_ERROR, {
+                conversation: 'xrocket_pay_service',
+                action: 'create_withdrawal',
+                data: { withdrawalId: userWithdrawal.id, currency: userWithdrawal.currency, network: userWithdrawal.network }
+            });
+            throw error;
+        }
+    }
+
+    /**
+     * Gets all available currencies information
+     */
+    public async getAvailableCurrencies(): Promise<AvailableCoinsResponse> {
+        try {
+            const response: AvailableCoinsResponse = await this.client.getAvailableCurrencies();
+            if (!response.success || !response.data) {
+                throw new Error('Failed to get available currencies');
+            }
+            return response;
+        } catch (error) {
+            errorHandler.logError(error, ErrorType.API_ERROR, {
+                conversation: 'xrocket_pay_service',
+                action: 'get_available_currencies'
+            });
+            throw error;
+        }
+    }
+
+    /**
+     * Gets available networks for a specific currency
+     */
+    public async getAvailableNetworks(currency: string): Promise<string[]> {
+        try {
+            // Convert internal currency to external currency for xRocket Pay API
+            const externalCurrency = CurrencyConverter.toExternal(currency as InternalCurrency);
+            
+            const response: AvailableCoinsResponse = await this.client.getAvailableCurrencies();
+            if (!response.success || !response.data) {
+                throw new Error('Failed to get available networks');
+            }
+
+            // Find the currency data and extract available networks
+            const currencyData = response.data.results.find(c => c.currency === externalCurrency);
+            if (!currencyData || !currencyData.feeWithdraw || !currencyData.feeWithdraw.networks) {
+                return [];
+            }
+
+            // Extract network codes from the networks
+            return currencyData.feeWithdraw.networks.map(network => network.networkCode);
+        } catch (error) {
+            errorHandler.logError(error, ErrorType.API_ERROR, {
+                conversation: 'xrocket_pay_service',
+                action: 'get_available_networks',
+                data: { currency }
+            });
             throw error;
         }
     }
@@ -334,31 +424,38 @@ export class XRocketPayService {
         try {
             // Convert internal currency to external currency for xRocket Pay API
             const externalCurrency = CurrencyConverter.toExternal(currency as InternalCurrency);
-            // The SDK expects currency as string, not an object
+            
             const response: WithdrawalFeesResponse = await this.client.getWithdrawalFees(externalCurrency);
             if (!response.success || !response.data) {
                 throw new Error('Failed to get withdrawal fees');
             }
             return response;
         } catch (error) {
-            console.error('Error getting withdrawal fees:', error);
+            errorHandler.logError(error, ErrorType.API_ERROR, {
+                conversation: 'xrocket_pay_service',
+                action: 'get_withdrawal_fees',
+                data: { currency, amount }
+            });
             throw error;
         }
     }
 
     /**
-     * Gets withdrawal status by withdrawalId
+     * Gets withdrawal status
      */
     public async getWithdrawalStatus(withdrawalId: string): Promise<WithdrawalStatusResponse> {
         try {
-            // The SDK expects withdrawalId as string, not an object
             const response: WithdrawalStatusResponse = await this.client.getWithdrawalStatus(withdrawalId);
             if (!response.success || !response.data) {
                 throw new Error('Failed to get withdrawal status');
             }
             return response;
         } catch (error) {
-            console.error('Error getting withdrawal status:', error);
+            errorHandler.logError(error, ErrorType.API_ERROR, {
+                conversation: 'xrocket_pay_service',
+                action: 'get_withdrawal_status',
+                data: { withdrawalId }
+            });
             throw error;
         }
     }
