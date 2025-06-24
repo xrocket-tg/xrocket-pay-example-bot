@@ -167,7 +167,7 @@ export class TransactionService {
         
         // Find existing balance
         let balance = await balanceRepo.findOne({
-            where: { user: { id: user.id }, currency }
+            where: { user: { id: user.id }, coin: currency }
         });
 
         if (balance) {
