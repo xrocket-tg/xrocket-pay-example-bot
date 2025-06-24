@@ -4,7 +4,7 @@ import { createMainMenuKeyboard } from "../keyboards/main";
 import { createChequeDetailKeyboard } from "../keyboards/cheque";
 import { UserService } from "../../services/user";
 import { XRocketPayService } from "../../services/xrocket-pay";
-import { CurrencyConverter, InternalCurrency, CURRENCIES } from "../../types/currency";
+import { CurrencyConverter, InternalCurrency } from "../../types/currency";
 import { formatNumber } from "../utils/formatters";
 import { AppDataSource } from "../../config/database";
 import { UserCheque } from "../../entities/user-cheque";

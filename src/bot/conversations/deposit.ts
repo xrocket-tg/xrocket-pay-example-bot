@@ -5,7 +5,7 @@ import { createCoinSelectionKeyboard } from "../keyboards/deposit";
 import { createMainMenuKeyboard } from "../keyboards/main";
 import { formatNumber } from "../utils/formatters";
 import { UserService } from "../../services/user";
-import { CURRENCIES, CurrencyConverter, InternalCurrency } from "../../types/currency";
+import { CurrencyConverter, InternalCurrency } from "../../types/currency";
 import { InlineKeyboard } from "grammy";
 import { XRocketPayService } from "../../services/xrocket-pay";
 import logger from '../../utils/logger';

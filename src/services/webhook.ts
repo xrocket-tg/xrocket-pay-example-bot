@@ -14,6 +14,7 @@ import {
 import { CurrencyConverter } from "../types/currency";
 import { Bot, InlineKeyboard } from "grammy";
 import { BotContext } from "../types/bot";
+import { TransactionService } from "./transaction";
 
 export class WebhookService {
     private static instance: WebhookService;
@@ -77,13 +78,9 @@ export class WebhookService {
     private async handleInvoicePaid(webhook: InvoicePaymentWebhook): Promise<{ success: boolean; message: string }> {
         logger.info('[WebhookService] Processing paid invoice:', webhook.data.id);
 
-        const queryRunner = AppDataSource.createQueryRunner();
-        await queryRunner.connect();
-        await queryRunner.startTransaction();
-
         try {
             // Find invoice in database
-            const invoiceRepo = queryRunner.manager.getRepository(UserInvoice);
+            const invoiceRepo = AppDataSource.getRepository(UserInvoice);
             const invoice = await invoiceRepo.findOne({
                 where: { invoiceId: webhook.data.id.toString() },
                 relations: ['user']
@@ -91,14 +88,12 @@ export class WebhookService {
 
             if (!invoice) {
                 logger.error('[WebhookService] Invoice not found in database:', webhook.data.id);
-                await queryRunner.rollbackTransaction();
                 return { success: false, message: 'Invoice not found' };
             }
 
             // Check if invoice is already paid
             if (invoice.status === 'paid') {
                 logger.info('[WebhookService] Invoice already marked as paid:', webhook.data.id);
-                await queryRunner.rollbackTransaction();
                 return { success: true, message: 'Invoice already paid' };
             }
 
@@ -106,27 +101,20 @@ export class WebhookService {
             const paymentInfo = extractPaymentInfo(webhook);
             logger.info('[WebhookService] Payment info:', paymentInfo);
 
-            // Update invoice status
-            await invoiceRepo.update(invoice.id, {
-                status: 'paid',
-                updatedAt: new Date()
-            });
+            // Update invoice amount with actual payment amount if different
+            if (paymentInfo.paymentAmount !== parseFloat(invoice.amount.toString())) {
+                await invoiceRepo.update(invoice.id, { amount: paymentInfo.paymentAmount });
+            }
 
-            // Update user balance with the actual payment amount
-            const amount = paymentInfo.paymentAmount;
-            const internalCurrency = CurrencyConverter.toInternal(webhook.data.currency as any);
-            await this.userService.updateBalance(
-                invoice.user,
-                internalCurrency,
-                amount,
-                queryRunner.manager
-            );
+            // Process invoice payment via TransactionService (ensures transaction safety)
+            const transactionService = TransactionService.getInstance();
+            await transactionService.processInvoicePayment(invoice);
 
-            await queryRunner.commitTransaction();
             logger.info('[WebhookService] Successfully processed paid invoice:', webhook.data.id);
 
             // Notify user about successful payment
             const formattedAmount = parseFloat(invoice.amount.toString());
+            const internalCurrency = CurrencyConverter.toInternal(webhook.data.currency as any);
             const keyboard = new InlineKeyboard().text("🏠 Main Menu", "main_menu");
             await this.bot.api.sendMessage(
                 invoice.user.telegramId,
@@ -138,11 +126,8 @@ export class WebhookService {
 
             return { success: true, message: 'Invoice paid successfully' };
         } catch (error) {
-            await queryRunner.rollbackTransaction();
             logger.error('[WebhookService] Error processing paid invoice:', error);
             throw error;
-        } finally {
-            await queryRunner.release();
         }
     }
 

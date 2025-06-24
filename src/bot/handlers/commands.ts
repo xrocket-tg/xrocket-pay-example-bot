@@ -2,7 +2,6 @@ import { BotContext } from "../../types/bot";
 import { UserService } from "../../services/user";
 import { AppDataSource } from "../../config/database";
 import { UserInvoice } from "../../entities/user-invoice";
-import { formatInvoiceDetailMessage } from "../utils/user";
 import { createInvoiceDetailKeyboard } from "../keyboards/invoices";
 import logger from '../../utils/logger';
 
@@ -29,7 +28,7 @@ export async function handleStart(ctx: BotContext): Promise<void> {
 
             if (invoice) {
                 // Show invoice details
-                const message = formatInvoiceDetailMessage(invoice);
+                const message = userService.formatInvoiceDetailMessage(invoice);
                 await ctx.reply(message, { reply_markup: createInvoiceDetailKeyboard(invoice) });
                 return;
             }

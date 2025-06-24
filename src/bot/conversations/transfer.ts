@@ -6,9 +6,10 @@ import { createMainMenuKeyboard } from "../keyboards/main";
 import { formatNumber } from "../utils/formatters";
 import { UserService } from "../../services/user";
 import { XRocketPayService } from "../../services/xrocket-pay";
-import { CURRENCIES, CurrencyConverter, InternalCurrency } from "../../types/currency";
+import { CurrencyConverter, InternalCurrency } from "../../types/currency";
 import { InlineKeyboard } from "grammy";
 import logger from '../../utils/logger';
+import { TransactionService } from "../../services/transaction";
 
 /**
  * Handles the transfer flow using session-based state management
@@ -294,15 +295,11 @@ export async function handleTransferConfirmation(ctx: BotContext): Promise<void>
         const savedTransfer = await transferRepo.save(transfer);
         logger.info('[Transfer] Transfer record created:', savedTransfer);
 
-        // Execute transfer via xRocket Pay
-        logger.info('[Transfer] Executing transfer via xRocket Pay');
-        const xrocketPay = XRocketPayService.getInstance();
-        const result = await xrocketPay.createTransfer(savedTransfer);
-        logger.info('[Transfer] xRocket Pay transfer result:', result);
-
-        // Update user balance (subtract amount)
-        logger.info('[Transfer] Updating sender balance');
-        await userService.updateBalance(user, selectedCoin, -transferAmount);
+        // Execute transfer via TransactionService (ensures transaction safety)
+        logger.info('[Transfer] Executing transfer via TransactionService');
+        const transactionService = TransactionService.getInstance();
+        const result = await transactionService.processTransfer(savedTransfer);
+        logger.info('[Transfer] TransactionService transfer result:', result);
 
         // Clear session
         ctx.session.step = undefined;

@@ -10,15 +10,4 @@ export function createCoinSelectionKeyboard(): InlineKeyboard {
         .text(`${CURRENCIES.USDT.emoji} ${CURRENCIES.USDT.name}`, "coin_USDT")
         .row()
         .text(`${CURRENCIES.XROCK.emoji} ${CURRENCIES.XROCK.name}`, "coin_XROCK");
-}
-
-/**
- * Creates inline keyboard for deposit success
- */
-export function createDepositSuccessKeyboard(): InlineKeyboard {
-    return new InlineKeyboard()
-        .text("💰 Check Balance", "balance")
-        .text("📋 My Invoices", "invoices")
-        .row()
-        .text("🏠 Main Menu", "main_menu");
 } 

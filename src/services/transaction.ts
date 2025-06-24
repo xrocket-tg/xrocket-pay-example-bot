@@ -225,40 +225,4 @@ export class TransactionService {
             await queryRunner.release();
         }
     }
-
-    /**
-     * Gets transaction history for a user
-     */
-    public async getUserTransactionHistory(userId: number, limit: number = 50): Promise<{
-        invoices: UserInvoice[];
-        transfers: UserTransfer[];
-        withdrawals: UserWithdrawal[];
-    }> {
-        const invoiceRepo = AppDataSource.getRepository(UserInvoice);
-        const transferRepo = AppDataSource.getRepository(UserTransfer);
-        const withdrawalRepo = AppDataSource.getRepository(UserWithdrawal);
-
-        const [invoices, transfers, withdrawals] = await Promise.all([
-            invoiceRepo.find({
-                where: { user: { id: userId } },
-                order: { createdAt: 'DESC' },
-                take: limit,
-                relations: ['user']
-            }),
-            transferRepo.find({
-                where: { sender: { id: userId } },
-                order: { createdAt: 'DESC' },
-                take: limit,
-                relations: ['sender']
-            }),
-            withdrawalRepo.find({
-                where: { user: { id: userId } },
-                order: { createdAt: 'DESC' },
-                take: limit,
-                relations: ['user']
-            })
-        ]);
-
-        return { invoices, transfers, withdrawals };
-    }
 } 

@@ -3,7 +3,7 @@ import { User } from "../entities/user";
 import { UserBalance } from "../entities/user-balance";
 import { UserInvoice } from "../entities/user-invoice";
 import { BotContext } from "../types/bot";
-import { InternalCurrency, CURRENCIES, CurrencyConverter } from "../types/currency";
+import { InternalCurrency, CurrencyConverter } from "../types/currency";
 import { formatNumber } from "../bot/utils/formatters";
 import { createMainMenuKeyboard } from "../bot/keyboards/main";
 import { EntityManager } from "typeorm";

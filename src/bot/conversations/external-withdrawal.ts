@@ -3,12 +3,13 @@ import { InlineKeyboard } from "grammy";
 import { createMainMenuKeyboard } from "../keyboards/main";
 import { UserService } from "../../services/user";
 import { XRocketPayService } from "../../services/xrocket-pay";
-import { CurrencyConverter, InternalCurrency, CURRENCIES } from "../../types/currency";
+import { CurrencyConverter, InternalCurrency } from "../../types/currency";
 import { formatNumber } from "../utils/formatters";
 import { AppDataSource } from "../../config/database";
 import { UserWithdrawal, WithdrawalNetwork } from "../../entities/user-withdrawal";
 import logger from "../../utils/logger";
 import { createWithdrawalDetailKeyboard } from "../keyboards/withdrawal";
+import { TransactionService } from "../../services/transaction";
 
 function createWithdrawalCurrencyKeyboard(): InlineKeyboard {
     const keyboard = new InlineKeyboard();
@@ -247,18 +248,17 @@ export async function handleWithdrawalConfirmation(ctx: BotContext): Promise<voi
         address
     );
     const savedWithdrawal = await withdrawalRepo.save(withdrawal);
-    // Execute withdrawal via xRocket Pay
-    const xrocketPay = XRocketPayService.getInstance();
+    // Execute withdrawal via TransactionService (ensures transaction safety)
+    const transactionService = TransactionService.getInstance();
     try {
-        const result = await xrocketPay.createWithdrawal(savedWithdrawal);
-        // Update user balance (subtract amount)
-        await userService.updateBalance(user, selectedCoin, -amount);
+        const result = await transactionService.processWithdrawal(savedWithdrawal);
+        
         // Show withdrawal details page
         logger.info('[Withdrawal] Showing withdrawal details');
         const currencyConfig = CurrencyConverter.getConfig(selectedCoin);
         const statusEmoji = getWithdrawalStatusEmoji(savedWithdrawal.status);
         
-        const detailMessage = `🌐 Withdrawal Details\n\n` +
+        const detailMessage = `Withdrawal Details\n\n` +
             `💰 Amount: ${formatNumber(amount)} ${currencyConfig.emoji} ${currencyConfig.name}\n` +
             `💸 Fee: ${formatNumber(fee)} ${currencyConfig.name}\n` +
             `💰 Total: ${formatNumber(amount + fee)} ${currencyConfig.name}\n` +
