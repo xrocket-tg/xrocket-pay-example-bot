@@ -5,7 +5,7 @@ import { createChequeDetailKeyboard } from "../keyboards/cheque";
 import { UserService } from "../../services/user";
 import { XRocketPayService } from "../../services/xrocket-pay";
 import { CurrencyConverter, InternalCurrency } from "../../types/currency";
-import { formatNumber } from "../utils/formatters";
+import { formatCurrency } from "../utils/formatters";
 import { AppDataSource } from "../../config/database";
 import { UserCheque } from "../../entities/user-cheque";
 import logger from "../../utils/logger";
@@ -82,8 +82,8 @@ export async function handleMultichequeCurrencySelection(ctx: BotContext): Promi
         // Use safe callback query answering
         await errorHandler.safeAnswerCallbackQuery(ctx);
 
-        if (!ctx.callbackQuery!.data) {
-            throw new Error("No callback data found");
+        if (!ctx.callbackQuery?.data) {
+            throw new Error("Invalid callback data");
         }
 
         const match = ctx.callbackQuery.data.match(/multicheque_currency_(.+)/);
@@ -241,7 +241,7 @@ export async function handleMultichequeConfirmation(ctx: BotContext): Promise<vo
         logger.info('[Multicheque] Showing success message');
         const currencyConfig = CurrencyConverter.getConfig(selectedCoin);
         const successMessage = `✅ Cheque created successfully!\n\n` +
-            `💰 Amount: ${formatNumber(amount)} ${currencyConfig.emoji} ${currencyConfig.name}\n` +
+            `💰 Amount: ${formatCurrency(amount)} ${currencyConfig.emoji} ${currencyConfig.name}\n` +
             `🆔 Cheque ID: ${chequeId}\n` +
             `🔗 Cheque URL: ${link}`;
 

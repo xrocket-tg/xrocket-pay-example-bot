@@ -4,7 +4,7 @@ import { createMainMenuKeyboard } from "../keyboards/main";
 import { UserService } from "../../services/user";
 import { XRocketPayService } from "../../services/xrocket-pay";
 import { CurrencyConverter, InternalCurrency, WithdrawalNetwork } from "../../types/currency";
-import { formatNumber } from "../utils/formatters";
+import { formatCurrency, formatDate } from "../utils/formatters";
 import { AppDataSource } from "../../config/database";
 import { UserWithdrawal } from "../../entities/user-withdrawal";
 import logger from "../../utils/logger";
@@ -188,9 +188,9 @@ export async function handleWithdrawalNetworkSelection(ctx: BotContext): Promise
         
         await messageService.editMessage(
             ctx,
-            `💰 Your ${currencyConfig.emoji} ${currencyConfig.name} balance: ${formatNumber(currentBalance)}\n` +
-            `💸 Withdrawal fee (${network}): ${formatNumber(fee)} ${currencyConfig.name}\n` +
-            `📊 Maximum withdrawal: ${formatNumber(maxWithdrawal)} ${currencyConfig.name}\n\n` +
+            `💰 Your ${currencyConfig.emoji} ${currencyConfig.name} balance: ${formatCurrency(currentBalance)}\n` +
+            `💸 Withdrawal fee (${network}): ${formatCurrency(fee)} ${currencyConfig.name}\n` +
+            `📊 Maximum withdrawal: ${formatCurrency(maxWithdrawal)} ${currencyConfig.name}\n\n` +
             `💵 Enter amount to withdraw:`,
             new InlineKeyboard()
         );
@@ -237,9 +237,9 @@ export async function handleWithdrawalAmountInput(ctx: BotContext): Promise<void
         const network = ctx.session.withdrawalNetwork;
         await messageService.editMessage(
             ctx,
-            `💸 Withdrawal amount: ${formatNumber(amount)} ${currencyConfig.emoji} ${currencyConfig.name}\n` +
-            `💸 Fee: ${formatNumber(fee)} ${currencyConfig.emoji} ${currencyConfig.name}\n` +
-            `💰 Total amount: ${formatNumber(withdrawalValidation.totalRequired)} ${currencyConfig.emoji} ${currencyConfig.name}\n\n` +
+            `💸 Withdrawal amount: ${formatCurrency(amount)} ${currencyConfig.emoji} ${currencyConfig.name}\n` +
+            `💸 Fee: ${formatCurrency(fee)} ${currencyConfig.emoji} ${currencyConfig.name}\n` +
+            `💰 Total amount: ${formatCurrency(withdrawalValidation.totalRequired)} ${currencyConfig.emoji} ${currencyConfig.name}\n\n` +
             `🔗 Enter the external wallet address for ${network}:`,
             new InlineKeyboard()
         );
@@ -281,9 +281,9 @@ export async function handleWithdrawalAddressInput(ctx: BotContext): Promise<voi
         await messageService.editMessage(
             ctx,
             `⚠️ Please confirm your withdrawal:\n\n` +
-            `💰 Amount: ${formatNumber(amount)} ${selectedCoin}\n` +
-            `💸 Fee: ${formatNumber(fee)} ${selectedCoin}\n` +
-            `💰 Total: ${formatNumber(totalAmount)} ${selectedCoin}\n` +
+            `💰 Amount: ${formatCurrency(amount)} ${selectedCoin}\n` +
+            `💸 Fee: ${formatCurrency(fee)} ${selectedCoin}\n` +
+            `💰 Total: ${formatCurrency(totalAmount)} ${selectedCoin}\n` +
             `🌐 Network: ${network}\n` +
             `🔗 Address: ${address}\n\n` +
             `Do you want to proceed?`,
@@ -343,14 +343,14 @@ export async function handleWithdrawalConfirmation(ctx: BotContext): Promise<voi
         const statusEmoji = getWithdrawalStatusEmoji(savedWithdrawal.status);
         
         const detailMessage = `🌐 Withdrawal Details\n\n` +
-            `💰 Amount: ${formatNumber(amount)} ${currencyConfig.emoji} ${currencyConfig.name}\n` +
-            `💸 Fee: ${formatNumber(fee)} ${currencyConfig.emoji} ${currencyConfig.name}\n` +
-            `💰 Total: ${formatNumber(amount + fee)} ${currencyConfig.emoji} ${currencyConfig.name}\n` +
+            `💰 Amount: ${formatCurrency(amount)} ${currencyConfig.emoji} ${currencyConfig.name}\n` +
+            `💸 Fee: ${formatCurrency(fee)} ${currencyConfig.emoji} ${currencyConfig.name}\n` +
+            `💰 Total: ${formatCurrency(amount + fee)} ${currencyConfig.emoji} ${currencyConfig.name}\n` +
             `🌐 Network: ${network}\n` +
             `🔗 Address: ${address}\n` +
             `📊 Status: ${statusEmoji} ${savedWithdrawal.status}\n` +
             `🆔 Withdrawal ID: ${savedWithdrawal.withdrawalId || 'Processing...'}\n` +
-            `📅 Created: ${savedWithdrawal.createdAt.toLocaleDateString()}`;
+            `📅 Created: ${formatDate(savedWithdrawal.createdAt)}`;
 
         await messageService.editMessage(
             ctx,

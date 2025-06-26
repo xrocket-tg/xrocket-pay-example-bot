@@ -33,4 +33,14 @@ export function formatNumberClean(num: number | string, maxDecimals: number = 8)
  */
 export function formatCurrency(num: number | string): string {
     return formatNumberClean(num, 8);
+}
+
+/**
+ * Formats a Date object as DD/MM/YYYY
+ */
+export function formatDate(date: Date): string {
+    const day = String(date.getDate()).padStart(2, '0');
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const year = date.getFullYear();
+    return `${day}/${month}/${year}`;
 } 

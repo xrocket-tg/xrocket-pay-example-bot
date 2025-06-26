@@ -1,8 +1,9 @@
 import { BotContext } from "../../types/bot";
 import { InlineKeyboard } from "grammy";
 import { createMainMenuButton } from "../keyboards/main";
-import { ErrorHandler } from "../utils/error-handler";
+import { ErrorHandler, ErrorType } from "../utils/error-handler";
 import { Api } from 'grammy';
+import logger from "../../utils/logger";
 
 /**
  * Message Service for handling Telegram bot message operations
@@ -24,11 +25,11 @@ export class MessageService {
     }
 
     /**
-     * Edits a message with proper error handling
+     * Edits a message or sends a new one if editing fails
      * @param ctx - The bot context
-     * @param message - The message text to display
-     * @param keyboard - Optional inline keyboard
-     * @param options - Additional options for message editing
+     * @param message - The message to send
+     * @param keyboard - Optional keyboard
+     * @param options - Additional options
      */
     public async editMessage(
         ctx: BotContext,
@@ -39,8 +40,10 @@ export class MessageService {
             disableWebPagePreview?: boolean;
         } = {}
     ): Promise<void> {
+        const { parseMode = 'HTML', disableWebPagePreview = false } = options;
+
         try {
-            // If we have a callback query with a message, edit it
+            // Try to edit existing message if we have a callback query
             if (ctx.callbackQuery?.message) {
                 await ctx.api.editMessageText(
                     ctx.chat!.id,
@@ -48,20 +51,20 @@ export class MessageService {
                     message,
                     {
                         reply_markup: keyboard,
-                        parse_mode: 'HTML',
-                        disable_web_page_preview: options.disableWebPagePreview
-                    }
+                        parse_mode: parseMode,
+                        disable_web_page_preview: disableWebPagePreview
+                    } as any
                 );
             } else {
                 // Otherwise, send a new message
                 await ctx.reply(message, {
                     reply_markup: keyboard,
-                    parse_mode: 'HTML',
-                    disable_web_page_preview: options.disableWebPagePreview
-                });
+                    parse_mode: parseMode,
+                    disable_web_page_preview: disableWebPagePreview
+                } as any);
             }
         } catch (error) {
-            this.errorHandler.logError(error, 'MESSAGE_ERROR', {
+            this.errorHandler.logError(error, ErrorType.MESSAGE_ERROR, {
                 conversation: 'message_service',
                 action: 'edit_message',
                 data: { messageLength: message.length, hasKeyboard: !!keyboard }
@@ -71,11 +74,11 @@ export class MessageService {
             try {
                 await ctx.reply(message, {
                     reply_markup: keyboard,
-                    parse_mode: 'HTML',
-                    disable_web_page_preview: options.disableWebPagePreview
-                });
+                    parse_mode: parseMode,
+                    disable_web_page_preview: disableWebPagePreview
+                } as any);
             } catch (fallbackError) {
-                this.errorHandler.logError(fallbackError, 'MESSAGE_ERROR', {
+                this.errorHandler.logError(fallbackError, ErrorType.MESSAGE_ERROR, {
                     conversation: 'message_service',
                     action: 'fallback_reply',
                     data: { originalError: error instanceof Error ? error.message : 'Unknown error' }
@@ -205,7 +208,7 @@ export class MessageService {
             await ctx.api.answerCallbackQuery(ctx.callbackQuery.id, { text });
         } catch (error) {
             // Log but don't throw - callback query might be too old
-            this.errorHandler.logError(error, 'CALLBACK_ERROR', {
+            this.errorHandler.logError(error, ErrorType.CALLBACK_ERROR, {
                 conversation: 'message_service',
                 action: 'answer_callback_query',
                 data: { callbackQueryId: ctx.callbackQuery.id }
@@ -257,13 +260,13 @@ export class MessageService {
             const navRow = [];
             
             if (currentPage > 0) {
-                navRow.push(keyboard.text("⬅️", `${pageCallback}_${currentPage - 1}`));
+                navRow.push({ text: "⬅️", callback_data: `${pageCallback}_${currentPage - 1}` });
             }
             
-            navRow.push(keyboard.text(`${currentPage + 1}/${totalPages}`, "noop"));
+            navRow.push({ text: `${currentPage + 1}/${totalPages}`, callback_data: "noop" });
             
             if (currentPage < totalPages - 1) {
-                navRow.push(keyboard.text("➡️", `${pageCallback}_${currentPage + 1}`));
+                navRow.push({ text: "➡️", callback_data: `${pageCallback}_${currentPage + 1}` });
             }
             
             keyboard.row(...navRow);
@@ -271,10 +274,7 @@ export class MessageService {
         
         // Add additional buttons
         if (additionalButtons.length > 0) {
-            const buttonRow = additionalButtons.map(btn => 
-                keyboard.text(btn.text, btn.callback_data)
-            );
-            keyboard.row(...buttonRow);
+            keyboard.row(...additionalButtons);
         }
         
         // Add back button

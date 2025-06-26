@@ -1,7 +1,7 @@
 import { InlineKeyboard } from "grammy";
 import { UserCheque } from "../../entities/user-cheque";
 import { CurrencyConverter, InternalCurrency } from "../../types/currency";
-import { formatNumber } from "../utils/formatters";
+import { formatCurrency } from "../utils/formatters";
 
 /**
  * Creates inline keyboard for cheque details
@@ -32,7 +32,7 @@ export function createChequesKeyboard(cheques: UserCheque[], totalCount: number 
     cheques.forEach((cheque, index) => {
         const currencyConfig = CurrencyConverter.getConfig(cheque.currency as InternalCurrency);
         const status = getChequeStatusEmoji(cheque.status);
-        const buttonText = `${status} ${currencyConfig.emoji} ${formatNumber(cheque.amount)} ${currencyConfig.name} (ID: ${cheque.id})`;
+        const buttonText = `${status} ${currencyConfig.emoji} ${formatCurrency(cheque.amount)} ${currencyConfig.name} (ID: ${cheque.id})`;
         
         keyboard.text(buttonText, `cheque_${cheque.id}`);
         

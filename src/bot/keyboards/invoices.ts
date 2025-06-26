@@ -1,7 +1,7 @@
 import { InlineKeyboard } from "grammy";
 import { UserInvoice } from "../../entities/user-invoice";
 import { CurrencyConverter, InternalCurrency } from "../../types/currency";
-import { formatNumber } from "../utils/formatters";
+import { formatCurrency } from "../utils/formatters";
 
 /**
  * Creates keyboard for invoice list with pagination
@@ -13,7 +13,7 @@ export function createInvoicesKeyboard(invoices: UserInvoice[], totalCount: numb
     invoices.forEach((invoice, index) => {
         const currencyConfig = CurrencyConverter.getConfig(invoice.currency as InternalCurrency);
         const status = getStatusEmoji(invoice.status);
-        const buttonText = `${status} ${currencyConfig.emoji} ${formatNumber(invoice.amount)} ${currencyConfig.name} (ID: ${invoice.id})`;
+        const buttonText = `${status} ${currencyConfig.emoji} ${formatCurrency(invoice.amount)} ${currencyConfig.name} (ID: ${invoice.id})`;
         
         keyboard.text(buttonText, `invoice_${invoice.id}`);
         

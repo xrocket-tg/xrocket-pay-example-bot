@@ -18,6 +18,9 @@ export class UserInvoice {
     @Column({ name: "amount", type: 'decimal', precision: 20, scale: 8 })
     public readonly amount!: number;
 
+    @Column({ name: "payment_amount_received", type: 'decimal', precision: 20, scale: 8, nullable: true })
+    public paymentAmountReceived?: number;
+
     @Column({ name: "currency" })
     public readonly currency!: string;
 

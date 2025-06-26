@@ -18,6 +18,7 @@ export class XRocketPayService {
 
     private constructor() {
         this.client = new XRocketPayClient({
+            baseUrl: process.env.XROCKET_API_URL || 'https://pay.xrocket.tg',
             apiKey: process.env.XROCKET_API_KEY || '',
             timeout: 30000
         });
@@ -77,21 +78,18 @@ export class XRocketPayService {
     }
 
     /**
-     * Checks invoice status
+     * Checks invoice status and returns full invoice data
      */
-    public async checkInvoiceStatus(invoiceId: string): Promise<string> {
+    public async checkInvoiceStatus(invoiceId: string): Promise<{ status: string; data?: any }> {
         try {
             const response = await this.client.getInvoice(invoiceId);
-            console.log('XRocketPay getInvoice response:', response);
-            
             if (!response.success || !response.data) {
                 throw new Error('Failed to get invoice status');
             }
-
-            console.log('XRocketPay invoice data:', response.data);
-            console.log('XRocketPay status field:', response.data.status);
-            
-            return response.data.status;
+            return {
+                status: response.data.status,
+                data: response.data
+            };
         } catch (error) {
             errorHandler.logError(error, ErrorType.API_ERROR, {
                 conversation: 'xrocket_pay_service',

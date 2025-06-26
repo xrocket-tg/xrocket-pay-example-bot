@@ -13,6 +13,7 @@ export interface SessionData {
     invoiceId?: string;
     transferAmount?: number;
     recipientId?: number;
+    transferRecipientId?: number;
     multichequeAmount?: number;
     // External withdrawal flow fields
     withdrawalAmount?: number;

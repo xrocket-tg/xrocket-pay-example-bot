@@ -1,7 +1,7 @@
 import { InlineKeyboard } from "grammy";
 import { UserTransfer } from "../../entities/user-transfer";
 import { CurrencyConverter, InternalCurrency } from "../../types/currency";
-import { formatNumber } from "../utils/formatters";
+import { formatCurrency } from "../utils/formatters";
 
 /**
  * Creates keyboard for transfer currency selection
@@ -39,7 +39,7 @@ export function createTransfersKeyboard(transfers: UserTransfer[], totalCount: n
     // Add transfer buttons
     transfers.forEach((transfer, index) => {
         const currencyConfig = CurrencyConverter.getConfig(transfer.currency as InternalCurrency);
-        const buttonText = `🔄 ${currencyConfig.emoji} ${formatNumber(transfer.amount)} ${currencyConfig.name} → ${transfer.recipientTelegramId} (ID: ${transfer.id})`;
+        const buttonText = `🔄 ${currencyConfig.emoji} ${formatCurrency(transfer.amount)} ${currencyConfig.name} → ${transfer.recipientTelegramId} (ID: ${transfer.id})`;
         
         keyboard.text(buttonText, `transfer_detail_${transfer.id}`);
         

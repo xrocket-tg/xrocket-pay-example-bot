@@ -54,6 +54,16 @@ export class WebhookService {
 
             // Verify signature and parse webhook payload
             const webhook = verifyAndParseWebhook(body, signature, secret);
+
+            logger.info('[WebhookService] Webhook data:', webhook.data.payment);
+
+            // Log the new paymentAmountReceived field
+            logger.info('[WebhookService] Payment amount received:', {
+                paymentAmount: webhook.data.payment.paymentAmount,
+                paymentAmountReceived: webhook.data.payment.paymentAmountReceived,
+                currency: webhook.data.currency
+            });
+
             logger.info('[WebhookService] Webhook verified and parsed:', {
                 type: webhook.type,
                 invoiceId: webhook.data.id,
@@ -108,14 +118,30 @@ export class WebhookService {
             const paymentInfo = extractPaymentInfo(webhook);
             logger.info('[WebhookService] Payment info:', paymentInfo);
 
+            // Log payment amount received information
+            logger.info('[WebhookService] Invoice payment details:', {
+                invoiceId: webhook.data.id,
+                requestedAmount: invoice.amount,
+                actualPaymentAmount: paymentInfo.paymentAmount,
+                paymentAmountReceived: paymentInfo.paymentAmountReceived,
+                fee: paymentInfo.paymentAmount - paymentInfo.paymentAmountReceived,
+                currency: webhook.data.currency
+            });
+
             // Update invoice amount with actual payment amount if different
             if (paymentInfo.paymentAmount !== parseFloat(invoice.amount.toString())) {
                 await invoiceRepo.update(invoice.id, { amount: paymentInfo.paymentAmount });
             }
 
+            // Update invoice with paymentAmountReceived
+            await invoiceRepo.update(invoice.id, { 
+                paymentAmountReceived: webhook.data.payment.paymentAmountReceived 
+            });
+
             // Process invoice payment via TransactionService (ensures transaction safety)
+            // Use paymentAmountReceived (amount after fees) for balance update
             const transactionService = TransactionService.getInstance();
-            await transactionService.processInvoicePayment(invoice);
+            await transactionService.processInvoicePayment(invoice, paymentInfo.paymentAmountReceived);
 
             logger.info('[WebhookService] Successfully processed paid invoice:', webhook.data.id);
 

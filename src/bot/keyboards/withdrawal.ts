@@ -1,7 +1,7 @@
 import { InlineKeyboard } from "grammy";
 import { UserWithdrawal } from "../../entities/user-withdrawal";
 import { CurrencyConverter, InternalCurrency } from "../../types/currency";
-import { formatNumber } from "../utils/formatters";
+import { formatCurrency } from "../utils/formatters";
 
 /**
  * Creates keyboard for withdrawal list with pagination
@@ -13,7 +13,7 @@ export function createWithdrawalsKeyboard(withdrawals: UserWithdrawal[], totalCo
     withdrawals.forEach((withdrawal, index) => {
         const currencyConfig = CurrencyConverter.getConfig(withdrawal.currency as InternalCurrency);
         const status = getStatusEmoji(withdrawal.status);
-        const buttonText = `${status} ${currencyConfig.emoji} ${formatNumber(withdrawal.amount)} ${currencyConfig.name} (ID: ${withdrawal.id})`;
+        const buttonText = `${status} ${currencyConfig.emoji} ${formatCurrency(withdrawal.amount)} ${currencyConfig.name} (ID: ${withdrawal.id})`;
         
         keyboard.text(buttonText, `withdrawal_${withdrawal.id}`);
         

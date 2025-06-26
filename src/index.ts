@@ -126,7 +126,7 @@ app.get('/health', (req: Request, res: Response) => {
 /**
  * Webhook endpoint for xRocket Pay invoice events
  */
-app.post('/webhook/invoice', (req: Request, res: Response) => {
+app.post(process.env.WEBHOOK_URL as string, (req: Request, res: Response) => {
     const signature = req.headers['rocket-pay-signature'] as string;
     const body = JSON.stringify(req.body);
 

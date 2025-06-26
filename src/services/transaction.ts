@@ -35,7 +35,7 @@ export class TransactionService {
     /**
      * Processes invoice payment with transaction safety
      */
-    public async processInvoicePayment(invoice: UserInvoice): Promise<void> {
+    public async processInvoicePayment(invoice: UserInvoice, amountToAdd?: number): Promise<void> {
         const queryRunner = AppDataSource.createQueryRunner();
         await queryRunner.connect();
         await queryRunner.startTransaction();
@@ -44,7 +44,8 @@ export class TransactionService {
             logger.info('[TransactionService] Processing invoice payment:', {
                 invoiceId: invoice.id,
                 amount: invoice.amount,
-                currency: invoice.currency
+                currency: invoice.currency,
+                amountToAdd: amountToAdd
             });
 
             // Update invoice status
@@ -52,12 +53,12 @@ export class TransactionService {
             await invoiceRepo.update(invoice.id, { status: 'paid' });
 
             // Update user balance
-            const amountToAdd = parseFloat(invoice.amount.toString());
+            const amount = amountToAdd !== undefined ? amountToAdd : parseFloat(invoice.amount.toString());
             await this.updateUserBalanceInTransaction(
                 queryRunner,
                 invoice.user,
                 invoice.currency as InternalCurrency,
-                amountToAdd
+                amount
             );
 
             await queryRunner.commitTransaction();

@@ -4,7 +4,7 @@ import { User } from "../entities/user";
 import { UserBalance } from "../entities/user-balance";
 import { UserInvoice } from "../entities/user-invoice";
 import { CurrencyConverter, InternalCurrency } from "../types/currency";
-import { formatNumber } from "../bot/utils/formatters";
+import { formatCurrency } from "../bot/utils/formatters";
 import { createMainMenuKeyboard } from "../bot/keyboards/main";
 import { EntityManager } from "typeorm";
 import { MessageService } from "../bot/services/message-service";
@@ -161,7 +161,7 @@ export class UserService {
         } else {
             balances.forEach(balance => {
                 const currencyConfig = CurrencyConverter.getConfig(balance.coin as InternalCurrency);
-                message += `${currencyConfig.emoji} ${currencyConfig.name}: ${formatNumber(balance.amount)}\n`;
+                message += `${currencyConfig.emoji} ${currencyConfig.name}: ${formatCurrency(balance.amount)}\n`;
             });
         }
         return message;
@@ -238,7 +238,15 @@ export class UserService {
         }
         
         let message = `📄 Invoice Details\n\n`;
-        message += `💰 Amount: ${formatNumber(invoice.amount)} ${currencyConfig.emoji} ${currencyConfig.name}\n`;
+        message += `💰 Amount: ${formatCurrency(invoice.amount)}\n`;
+        
+        // Add Amount Received field if invoice is paid and has paymentAmountReceived
+        if (invoice.status === 'paid' && invoice.paymentAmountReceived !== undefined) {
+            const fee = parseFloat(invoice.amount.toString()) - invoice.paymentAmountReceived;
+            message += `💸 Amount Received: ${formatCurrency(invoice.paymentAmountReceived)}\n`;
+            message += `📊 Fee: ${formatCurrency(fee)}\n`;
+        }
+        
         message += `📊 Status: ${status}\n`;
         message += `🆔 Invoice ID: ${invoice.invoiceId}\n`;
         message += `📅 Created: ${invoice.createdAt.toLocaleDateString()}\n\n`;

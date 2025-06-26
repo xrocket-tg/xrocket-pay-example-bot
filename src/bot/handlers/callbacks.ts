@@ -19,7 +19,7 @@ import { CurrencyConverter, InternalCurrency } from "../../types/currency";
 import { createTransfersKeyboard, createTransferDetailKeyboard } from "../keyboards/transfer";
 import { createChequesKeyboard, createChequeDetailKeyboard } from "../keyboards/cheque";
 import { UserTransfer } from "../../entities/user-transfer";
-import { formatNumber } from "../utils/formatters";
+import { formatCurrency, formatDate } from "../utils/formatters";
 import { ValidationService } from "../utils/validation";
 import { ErrorHandler, ErrorType } from "../utils/error-handler";
 import { MessageService } from "../services/message-service";
@@ -235,22 +235,23 @@ export async function handleInvoiceDetail(ctx: BotContext): Promise<void> {
     // Fetch latest status from xRocket Pay
     try {
         const xrocketPay = XRocketPayService.getInstance();
-        const xrocketStatus = await xrocketPay.checkInvoiceStatus(invoice.invoiceId);
-        
-        logger.info('[HandleInvoiceDetail] xRocket Pay status:', xrocketStatus);
+        const xrocketResponse = await xrocketPay.checkInvoiceStatus(invoice.invoiceId);
+        logger.info('[HandleInvoiceDetail] xRocket Pay response:', xrocketResponse);
         
         // Map xRocket Pay status to internal status
         let newStatus = invoice.status;
-        switch (xrocketStatus.toLowerCase()) {
-            case 'paid':
-                newStatus = 'paid';
-                break;
-            case 'expired':
-                newStatus = 'expired';
-                break;
-            case 'active':
-                newStatus = 'active';
-                break;
+        if (xrocketResponse.status) {
+            switch (xrocketResponse.status.toLowerCase()) {
+                case 'paid':
+                    newStatus = 'paid';
+                    break;
+                case 'expired':
+                    newStatus = 'expired';
+                    break;
+                case 'active':
+                    newStatus = 'active';
+                    break;
+            }
         }
 
         // Update database if status changed
@@ -344,12 +345,12 @@ export async function handleCheckPayment(ctx: BotContext): Promise<void> {
 
     try {
         const xrocketPay = XRocketPayService.getInstance();
-        const xrocketStatus = await xrocketPay.checkInvoiceStatus(invoice.invoiceId);
+        const xrocketResponse = await xrocketPay.checkInvoiceStatus(invoice.invoiceId);
         
-        logger.info('[HandleCheckPayment] xRocket Pay status:', xrocketStatus);
+        logger.info('[HandleCheckPayment] xRocket Pay response:', xrocketResponse);
         logger.info('[HandleCheckPayment] Current DB status:', invoice.status);
         
-        if (xrocketStatus.toLowerCase() === 'paid' && invoice.status !== 'paid') {
+        if (xrocketResponse.status && xrocketResponse.status.toLowerCase() === 'paid' && invoice.status !== 'paid') {
             logger.info('[HandleCheckPayment] Payment confirmed, updating status');
             
             // Update invoice status
@@ -357,16 +358,42 @@ export async function handleCheckPayment(ctx: BotContext): Promise<void> {
                 status: 'paid'
             });
 
+            // Calculate the amount to add based on paymentAmountReceived
+            let amountToAdd: number;
+            let paymentAmountReceived: number | undefined;
+            
+            if (xrocketResponse.data && xrocketResponse.data.payments && xrocketResponse.data.payments.length > 0) {
+                // Use paymentAmountReceived from the first payment
+                amountToAdd = xrocketResponse.data.payments[0].paymentAmountReceived;
+                paymentAmountReceived = amountToAdd;
+                logger.info('[HandleCheckPayment] Using paymentAmountReceived:', {
+                    paymentAmount: xrocketResponse.data.payments[0].paymentAmount,
+                    paymentAmountReceived: amountToAdd,
+                    fee: xrocketResponse.data.payments[0].paymentAmount - amountToAdd
+                });
+            } else {
+                // Fallback to original amount if payment data not available
+                amountToAdd = parseFloat(invoice.amount.toString());
+                logger.info('[HandleCheckPayment] Using fallback amount:', amountToAdd);
+            }
+
+            // Update invoice with paymentAmountReceived if available
+            if (paymentAmountReceived !== undefined) {
+                await invoiceRepo.update(invoice.id, {
+                    paymentAmountReceived: paymentAmountReceived
+                });
+            }
+
             logger.info('[HandleCheckPayment] Updating user balance');
-            // Update user balance
+            // Update user balance using paymentAmountReceived (amount after fees)
             const userService = UserService.getInstance();
-            const amountToAdd = parseFloat(invoice.amount.toString());
+            
             logger.info('[HandleCheckPayment] Amount details:', {
                 originalAmount: invoice.amount,
-                originalType: typeof invoice.amount,
-                parsedAmount: amountToAdd,
-                parsedType: typeof amountToAdd
+                amountToAdd: amountToAdd,
+                currency: invoice.currency
             });
+            
             await userService.updateBalance(invoice.user, invoice.currency as any, amountToAdd);
 
             logger.info('[HandleCheckPayment] Getting updated balances');
@@ -581,13 +608,13 @@ export async function handleWithdrawalDetail(ctx: BotContext): Promise<void> {
     const statusEmoji = getWithdrawalStatusEmoji(updatedWithdrawal.status);
     
     let detailMessage = `🌐 Withdrawal Details\n\n` +
-        `💰 Amount: ${formatNumber(updatedWithdrawal.amount)} ${currencyConfig.emoji} ${currencyConfig.name}\n` +
-        `💸 Fee: ${formatNumber(updatedWithdrawal.fee)} ${currencyConfig.name}\n` +
-        `💰 Total: ${formatNumber(updatedWithdrawal.amount + updatedWithdrawal.fee)} ${currencyConfig.name}\n` +
+        `💰 Amount: ${formatCurrency(updatedWithdrawal.amount)} ${currencyConfig.emoji} ${currencyConfig.name}\n` +
+        `💸 Fee: ${formatCurrency(updatedWithdrawal.fee)} ${currencyConfig.name}\n` +
+        `💰 Total: ${formatCurrency(updatedWithdrawal.amount + updatedWithdrawal.fee)} ${currencyConfig.name}\n` +
         `🌐 Network: ${updatedWithdrawal.network}\n` +
         `🔗 Address: ${updatedWithdrawal.address}\n` +
         `📊 Status: ${statusEmoji} ${updatedWithdrawal.status}\n` +
-        `📅 Created: ${updatedWithdrawal.createdAt.toLocaleDateString()}\n`;
+        `📅 Created: ${formatDate(updatedWithdrawal.createdAt)}\n`;
 
     if (updatedWithdrawal.txHash) {
         detailMessage += `🔗 Transaction Hash: ${updatedWithdrawal.txHash}\n`;
@@ -670,14 +697,14 @@ export async function handleCheckWithdrawalStatus(ctx: BotContext): Promise<void
                     const statusEmoji = getWithdrawalStatusEmoji(newStatus);
                     
                     let detailMessage = `🌐 Withdrawal Details\n\n` +
-                        `💰 Amount: ${formatNumber(updatedWithdrawal.amount)} ${currencyConfig.emoji} ${currencyConfig.name}\n` +
-                        `💸 Fee: ${formatNumber(updatedWithdrawal.fee)} ${currencyConfig.name}\n` +
-                        `💰 Total: ${formatNumber(updatedWithdrawal.amount + updatedWithdrawal.fee)} ${currencyConfig.name}\n` +
+                        `💰 Amount: ${formatCurrency(updatedWithdrawal.amount)} ${currencyConfig.emoji} ${currencyConfig.name}\n` +
+                        `💸 Fee: ${formatCurrency(updatedWithdrawal.fee)} ${currencyConfig.name}\n` +
+                        `💰 Total: ${formatCurrency(updatedWithdrawal.amount + updatedWithdrawal.fee)} ${currencyConfig.name}\n` +
                         `🌐 Network: ${updatedWithdrawal.network}\n` +
                         `🔗 Address: ${updatedWithdrawal.address}\n` +
                         `📊 Status: ${statusEmoji} ${newStatus}\n` +
                         `🆔 Withdrawal ID: ${updatedWithdrawal.withdrawalId}\n` +
-                        `📅 Created: ${updatedWithdrawal.createdAt.toLocaleDateString()}\n`;
+                        `📅 Created: ${formatDate(updatedWithdrawal.createdAt)}\n`;
 
                     if (updatedWithdrawal.txHash) {
                         detailMessage += `🔗 Transaction Hash: ${updatedWithdrawal.txHash}\n`;
@@ -983,9 +1010,9 @@ export async function handleTransferDetail(ctx: BotContext): Promise<void> {
     const currencyConfig = CurrencyConverter.getConfig(transfer.currency as InternalCurrency);
     
     const detailMessage = `🔄 Transfer Details\n\n` +
-        `💰 Amount: ${formatNumber(transfer.amount)} ${currencyConfig.emoji} ${currencyConfig.name}\n` +
+        `💰 Amount: ${formatCurrency(transfer.amount)} ${currencyConfig.emoji} ${currencyConfig.name}\n` +
         `👤 Recipient ID: ${transfer.recipientTelegramId}\n` +
-        `📅 Created: ${transfer.createdAt.toLocaleDateString()}\n` +
+        `📅 Created: ${formatDate(transfer.createdAt)}\n` +
         `🆔 Transfer ID: ${transfer.id}`;
 
     await messageService.editMessage(
@@ -1060,11 +1087,11 @@ export async function handleChequeDetail(ctx: BotContext): Promise<void> {
     const statusEmoji = getChequeStatusEmoji(cheque.status);
     
     let detailMessage = `🎫 Cheque Details\n\n` +
-        `💰 Amount: ${formatNumber(cheque.amount)} ${currencyConfig.emoji} ${currencyConfig.name}\n` +
+        `💰 Amount: ${formatCurrency(cheque.amount)} ${currencyConfig.emoji} ${currencyConfig.name}\n` +
         `👥 Users: ${cheque.usersNumber}\n` +
         `📊 Status: ${statusEmoji} ${cheque.status}\n` +
         `🆔 Cheque ID: ${cheque.chequeId}\n` +
-        `📅 Created: ${cheque.createdAt.toLocaleDateString()}\n`;
+        `📅 Created: ${formatDate(cheque.createdAt)}\n`;
 
     await messageService.editMessage(
         ctx,

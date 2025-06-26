@@ -3,7 +3,7 @@ import { AppDataSource } from "../../config/database";
 import { UserTransfer } from "../../entities/user-transfer";
 import { createTransferCurrencyKeyboard } from "../keyboards/transfer";
 import { createMainMenuKeyboard } from "../keyboards/main";
-import { formatNumber } from "../utils/formatters";
+import { formatCurrency } from "../utils/formatters";
 import { UserService } from "../../services/user";
 import { XRocketPayService } from "../../services/xrocket-pay";
 import { CurrencyConverter, InternalCurrency } from "../../types/currency";
@@ -160,7 +160,7 @@ export async function handleTransferAmountInput(ctx: BotContext): Promise<void> 
         // Ask for recipient ID
         logger.info('[Transfer] Asking for recipient ID');
         const currencyConfig = CurrencyConverter.getConfig(selectedCoin);
-        const formattedAmount = formatNumber(amount);
+        const formattedAmount = formatCurrency(amount);
         logger.info('[Transfer] Amount formatting:', {
             originalAmount: amount,
             formattedAmount: formattedAmount,
@@ -232,7 +232,7 @@ export async function handleTransferRecipientInput(ctx: BotContext): Promise<voi
     logger.info('[Transfer] Showing confirmation');
     const currencyConfig = CurrencyConverter.getConfig(selectedCoin);
     const confirmationMessage = `📋 Transfer Confirmation\n\n` +
-        `💰 Amount: ${formatNumber(amount)} ${currencyConfig.emoji} ${currencyConfig.name}\n` +
+        `💰 Amount: ${formatCurrency(amount)} ${currencyConfig.emoji} ${currencyConfig.name}\n` +
         `👤 Recipient ID: ${recipientId}\n\n` +
         `Please confirm the transfer:`;
 
@@ -283,7 +283,7 @@ export async function handleTransferConfirmation(ctx: BotContext): Promise<void>
         // Execute transfer
         logger.info('[Transfer] Executing transfer');
         const transactionService = TransactionService.getInstance();
-        const transfer = await transactionService.executeTransfer(user, selectedCoin, amount, recipientId);
+        const transfer = await transactionService.executeTransfer(user, selectedCoin, amount, recipientId.toString());
         logger.info('[Transfer] Transfer executed:', transfer);
 
         // Clear session
@@ -296,7 +296,7 @@ export async function handleTransferConfirmation(ctx: BotContext): Promise<void>
         logger.info('[Transfer] Showing success message');
         const currencyConfig = CurrencyConverter.getConfig(selectedCoin);
         const successMessage = `✅ Transfer completed successfully!\n\n` +
-            `💰 Amount: ${formatNumber(amount)} ${currencyConfig.emoji} ${currencyConfig.name}\n` +
+            `💰 Amount: ${formatCurrency(amount)} ${currencyConfig.emoji} ${currencyConfig.name}\n` +
             `👤 Recipient ID: ${recipientId}\n` +
             `🆔 Transfer ID: ${transfer.id}`;
 
