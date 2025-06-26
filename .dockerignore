@@ -1,0 +1,54 @@
+node_modules
+npm-debug.log
+.git
+.gitignore
+README.md
+.env
+.env.local
+.env.*.local
+.nyc_output
+coverage
+.nyc_output
+.coverage
+*.log
+logs
+*.pid
+*.seed
+*.pid.lock
+.npm
+.eslintcache
+.node_repl_history
+.DS_Store
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# Docker files
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Documentation
+*.md
+docs/
+
+# Test files
+test/
+tests/
+__tests__/
+*.test.js
+*.test.ts
+*.spec.js
+*.spec.ts
+
+# Build artifacts
+dist/
+build/
+.next/
+.nuxt/
+
+# Temporary files
+tmp/
+temp/ 

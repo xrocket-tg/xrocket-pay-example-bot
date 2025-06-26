@@ -7,7 +7,10 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "dev": "ts-node-dev --respawn --transpile-only --exit-child --ignore-watch node_modules src/index.ts",
-    "typeorm": "typeorm-ts-node-commonjs"
+    "typeorm": "typeorm-ts-node-commonjs",
+    "db:setup": "npm run typeorm schema:sync -- -d src/config/database.ts",
+    "db:migrate": "npm run typeorm migration:run -- -d src/config/database.ts",
+    "db:generate": "npm run typeorm migration:generate -- -d src/config/database.ts"
   },
   "dependencies": {
     "@grammyjs/conversations": "^1.1.1",
