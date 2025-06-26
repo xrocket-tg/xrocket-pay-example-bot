@@ -272,15 +272,62 @@ export class TransactionService {
             const transfer = UserTransfer.create(sender, parseInt(recipientTelegramId), null, amount, currency);
             const savedTransfer = await transferRepo.save(transfer);
 
+            // Execute transfer via xRocket Pay BEFORE committing transaction
+            logger.info('[TransactionService] Calling xRocketPay API for transfer:', savedTransfer.id);
+            let result;
+            try {
+                result = await this.xrocketPayService.createTransfer(savedTransfer);
+            } catch (apiError) {
+                // If API call fails, rollback the transaction and throw the error
+                await queryRunner.rollbackTransaction();
+                this.errorHandler.logError(apiError, ErrorType.API_ERROR, {
+                    conversation: 'transaction_service',
+                    action: 'execute_transfer',
+                    data: { senderId: sender.id, currency, amount, recipientTelegramId }
+                });
+                throw apiError;
+            }
+
+            // Update transfer record with transfer ID
+            await transferRepo.update(savedTransfer.id, { transferId: result.transferId });
+
+            // Update sender balance (subtract amount)
+            await this.updateUserBalanceInTransaction(
+                queryRunner,
+                sender,
+                currency as InternalCurrency,
+                -amount
+            );
+
+            // Commit transaction only after API call succeeds
             await queryRunner.commitTransaction();
 
-            // Process the transfer (this will handle the xRocket Pay API call and balance updates)
-            await this.processTransfer(savedTransfer);
+            // Refresh the transfer object to get the updated fields
+            const updatedTransfer = await AppDataSource.getRepository(UserTransfer).findOne({
+                where: { id: savedTransfer.id }
+            });
 
-            return savedTransfer;
+            if (!updatedTransfer) {
+                throw new Error('Transfer record not found after processing');
+            }
+
+            logger.info('[TransactionService] Transfer executed successfully');
+            return updatedTransfer;
         } catch (error) {
-            await queryRunner.rollbackTransaction();
-            this.errorHandler.logError(error, ErrorType.DATABASE_ERROR, {
+            // Only rollback if transaction hasn't been committed yet
+            try {
+                await queryRunner.rollbackTransaction();
+            } catch (rollbackError) {
+                // Transaction might already be committed or rolled back
+                logger.warn('[TransactionService] Rollback failed, transaction might already be committed:', rollbackError);
+            }
+            
+            // Determine error type - preserve API errors
+            const errorType = (error && typeof error === 'object' && 'response' in error) 
+                ? ErrorType.API_ERROR 
+                : ErrorType.DATABASE_ERROR;
+            
+            this.errorHandler.logError(error, errorType, {
                 conversation: 'transaction_service',
                 action: 'execute_transfer',
                 data: { senderId: sender.id, currency, amount, recipientTelegramId }
@@ -329,50 +376,57 @@ export class TransactionService {
                 -amount
             );
 
+            // Execute withdrawal via xRocket Pay BEFORE committing transaction
+            logger.info('[TransactionService] Calling xRocketPay API for withdrawal:', savedWithdrawal.id);
+            let result;
+            try {
+                result = await this.xrocketPayService.createWithdrawal(savedWithdrawal);
+            } catch (apiError) {
+                // If API call fails, rollback the transaction and throw the error
+                await queryRunner.rollbackTransaction();
+                this.errorHandler.logError(apiError, ErrorType.API_ERROR, {
+                    conversation: 'transaction_service',
+                    action: 'execute_withdrawal',
+                    data: { userId: user.id, amount, currency, fee, network, address }
+                });
+                throw apiError;
+            }
+
+            // Update withdrawal record with withdrawal ID and status
+            await withdrawalRepo.update(savedWithdrawal.id, {
+                withdrawalId: result.withdrawalId,
+                status: 'CREATED' // Initial status from xRocket Pay
+            });
+
+            // Commit transaction only after API call succeeds
             await queryRunner.commitTransaction();
 
-            // Execute withdrawal via xRocket Pay (outside transaction to avoid lock timeouts)
-            logger.info('[TransactionService] Calling xRocketPay API for withdrawal:', savedWithdrawal.id);
-            const result = await this.xrocketPayService.createWithdrawal(savedWithdrawal);
+            // Refresh the withdrawal object to get the updated fields
+            const updatedWithdrawal = await AppDataSource.getRepository(UserWithdrawal).findOne({
+                where: { id: savedWithdrawal.id }
+            });
 
-            // Update withdrawal record with withdrawal ID and status (in a separate transaction)
-            const updateQueryRunner = AppDataSource.createQueryRunner();
-            await updateQueryRunner.connect();
-            await updateQueryRunner.startTransaction();
-
-            try {
-                await updateQueryRunner.manager.getRepository(UserWithdrawal).update(savedWithdrawal.id, {
-                    withdrawalId: result.withdrawalId,
-                    status: 'CREATED' // Initial status from xRocket Pay
-                });
-
-                await updateQueryRunner.commitTransaction();
-
-                // Refresh the withdrawal object to get the updated fields
-                const updatedWithdrawal = await AppDataSource.getRepository(UserWithdrawal).findOne({
-                    where: { id: savedWithdrawal.id }
-                });
-
-                if (!updatedWithdrawal) {
-                    throw new Error('Withdrawal record not found after processing');
-                }
-
-                logger.info('[TransactionService] Withdrawal executed successfully');
-                return updatedWithdrawal;
-            } catch (updateError) {
-                await updateQueryRunner.rollbackTransaction();
-                this.errorHandler.logError(updateError, ErrorType.DATABASE_ERROR, {
-                    conversation: 'transaction_service',
-                    action: 'update_withdrawal_after_api',
-                    data: { withdrawalId: savedWithdrawal.id, apiResult: result }
-                });
-                throw updateError;
-            } finally {
-                await updateQueryRunner.release();
+            if (!updatedWithdrawal) {
+                throw new Error('Withdrawal record not found after processing');
             }
+
+            logger.info('[TransactionService] Withdrawal executed successfully');
+            return updatedWithdrawal;
         } catch (error) {
-            await queryRunner.rollbackTransaction();
-            this.errorHandler.logError(error, ErrorType.DATABASE_ERROR, {
+            // Only rollback if transaction hasn't been committed yet
+            try {
+                await queryRunner.rollbackTransaction();
+            } catch (rollbackError) {
+                // Transaction might already be committed or rolled back
+                logger.warn('[TransactionService] Rollback failed, transaction might already be committed:', rollbackError);
+            }
+            
+            // Determine error type - preserve API errors
+            const errorType = (error && typeof error === 'object' && 'response' in error) 
+                ? ErrorType.API_ERROR 
+                : ErrorType.DATABASE_ERROR;
+            
+            this.errorHandler.logError(error, errorType, {
                 conversation: 'transaction_service',
                 action: 'execute_withdrawal',
                 data: { userId: user.id, amount, currency, fee, network, address }

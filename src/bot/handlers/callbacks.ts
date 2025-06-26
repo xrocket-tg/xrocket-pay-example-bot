@@ -58,22 +58,43 @@ export async function handleDeposit(ctx: BotContext): Promise<void> {
 export async function handleMainMenu(ctx: BotContext): Promise<void> {
     const validationService = ValidationService.getInstance();
     const messageService = MessageService.getInstance();
+    const userService = UserService.getInstance();
     
     try {
         if (!validationService.validateCallbackContext(ctx)) {
             throw new Error("Invalid context for main menu");
         }
-
-        const userService = UserService.getInstance();
-        const user = await userService.findOrCreateUser(ctx);
         
+        const user = await userService.findOrCreateUser(ctx);
         const balances = await userService.getUserBalances(user);
-        const message = userService.formatBalanceMessage(balances);
+        const balanceMessage = userService.formatBalanceMessage(balances);
+
+        // Show welcome message with balance
+        const welcomeMessage = `🤖 <b>Demo Bot Information</b>
+
+This is a demo-bot to demonstrate abilities of xRocket Pay: payment API from @xRocket bot
+
+📚 <b>Resources:</b>
+• Source code: <a href="https://github.com/xrocket-tg/xrocket-pay-example-bot">GitHub Repository</a>
+• TypeScript SDK: <a href="https://www.npmjs.com/package/xrocket-pay-api-sdk">npm Package</a>
+• API Documentation: <a href="https://pay.xrocket.tg/api#/">Swagger UI</a>
+• API Schema: <a href="https://pay.xrocket.tg/api-json">OpenAPI JSON</a>
+
+⚠️ <b>Warning:</b> This bot is created for testing purposes. If you want to reuse this code for production, please do it on your own risk.
+
+🐛 <b>Support:</b>
+• Report issues: <a href="https://github.com/xrocket-tg/xrocket-pay-example-bot/issues">GitHub Issues</a>
+• Join chat: <a href="https://t.me/+mA9IoHSdvIRhZjFi">Telegram Community</a>
+
+----------------------
+
+${balanceMessage}`;
 
         await messageService.editMessage(
             ctx,
-            message,
-            createMainMenuKeyboard()
+            welcomeMessage,
+            createMainMenuKeyboard(),
+            { disableWebPagePreview: true }
         );
     } catch (error) {
         await errorHandler.handleConversationFlowError(ctx, error, 'main_menu', 'button_click');
@@ -94,7 +115,7 @@ export async function handleWithdraw(ctx: BotContext): Promise<void> {
         
         await messageService.editMessage(
             ctx,
-            "💸 Choose withdrawal option:",
+            "💸 <b>Choose Withdrawal Option</b>\n\n🚀 <b>xRocket bot has 3 ways to send payments to your users:</b>\n\n💬 <b>1. Transfers</b>\nBest if you know telegram ID and user is already in @xRocket. They will receive payment and message right in bot. If you send too small amount, name of app will be changed to \"Some App\". This was done to prevent spam.\n\n🎫 <b>2. Cheques</b>\nIf you are not sure if user ever started xRocket, you can deliver them crypto using cheques. User will need to click by cheque link to activate it. There is also bonus, if you catch new users this way, they will become your refferals in @xRocket.\n\n🌐 <b>3. Direct Blockchain</b>\nIf you know only blockchain address of user, you can send them crypto directly. In this case, flat blockchain fee applies (same as when you withdraw from @xRocket).",
             createWithdrawMenuKeyboard()
         );
     } catch (error) {

@@ -44,7 +44,7 @@ export async function handleDepositFlow(ctx: BotContext): Promise<void> {
         logger.info('[Deposit] Showing currency selection');
         await messageService.editMessage(
             ctx,
-            "💱 Select currency for deposit:",
+            "💱 Select currency for deposit:\n\n💡 <i>Note: If you have products with known prices, you can skip this step and offer users your products directly with pricing, then proceed to creating an invoice.</i>",
             createCoinSelectionKeyboard()
         );
 
@@ -93,7 +93,7 @@ export async function handleCurrencySelection(ctx: BotContext): Promise<void> {
         logger.info('[Deposit] Asking for amount');
         await messageService.editMessage(
             ctx,
-            `💵 Enter amount to deposit in ${currencyConfig.emoji} ${currencyConfig.name}:`,
+            `💵 Enter amount to deposit in ${currencyConfig.emoji} ${currencyConfig.name}:\n\n💡 <i>Note: If you have products with known prices, you can skip this step and offer users your products directly with pricing, then proceed to creating an invoice.</i>`,
             new InlineKeyboard()
         );
     } catch (error) {

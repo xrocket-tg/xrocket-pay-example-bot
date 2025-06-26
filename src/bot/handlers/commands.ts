@@ -3,6 +3,7 @@ import { UserService } from "../../services/user";
 import { AppDataSource } from "../../config/database";
 import { UserInvoice } from "../../entities/user-invoice";
 import { createInvoiceDetailKeyboard } from "../keyboards/invoices";
+import { createMainMenuKeyboard } from "../keyboards/main";
 import { ErrorHandler, ErrorType } from "../utils/error-handler";
 import { MessageService } from "../services/message-service";
 import logger from '../../utils/logger';
@@ -46,6 +47,33 @@ export async function handleStart(ctx: BotContext): Promise<void> {
         }
     }
     
-    // Default behavior - show balance
-    await userService.displayBalance(ctx, user);
+    // Get balance and combine with welcome message
+    const balances = await userService.getUserBalances(user);
+    const balanceMessage = userService.formatBalanceMessage(balances);
+    
+    const welcomeMessage = `🤖 <b>Demo Bot Information</b>
+
+This is a demo-bot to demonstrate abilities of xRocket Pay: payment API from @xRocket bot
+
+📚 <b>Resources:</b>
+• Source code: <a href="https://github.com/xrocket-tg/xrocket-pay-example-bot">GitHub Repository</a>
+• TypeScript SDK: <a href="https://www.npmjs.com/package/xrocket-pay-api-sdk">npm Package</a>
+• API Documentation: <a href="https://pay.xrocket.tg/api#/">Swagger UI</a>
+• API Schema: <a href="https://pay.xrocket.tg/api-json">OpenAPI JSON</a>
+
+⚠️ <b>Warning:</b> This bot is created for testing purposes. If you want to reuse this code for production, please do it on your own risk.
+
+🐛 <b>Support:</b>
+• Report issues: <a href="https://github.com/xrocket-tg/xrocket-pay-example-bot/issues">GitHub Issues</a>
+• Join chat: <a href="https://t.me/+mA9IoHSdvIRhZjFi">Telegram Community</a>
+
+----------------------
+
+${balanceMessage}`;
+    
+    await ctx.reply(welcomeMessage, { 
+        parse_mode: "HTML", 
+        disable_web_page_preview: true,
+        reply_markup: createMainMenuKeyboard()
+    });
 } 

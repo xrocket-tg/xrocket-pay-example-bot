@@ -252,8 +252,11 @@ export class UserService {
         message += `📅 Created: ${invoice.createdAt.toLocaleDateString()}\n\n`;
 
         if (invoice.paymentUrl && invoice.status !== 'paid' && invoice.status !== 'expired') {
-            message += `💳 Pay with xRocket Pay:\n${invoice.paymentUrl}`;
+            message += `💳 Pay with xRocket Pay:\n${invoice.paymentUrl}\n\n`;
         }
+
+        message += `🔧 <b>Payment Handling Options:</b>\n`;
+        message += `💡 Note: You have two ways to handle payment: set up webhooks or simply check invoice status (in a loop or with button). We handle it here via webhooks, but we have added check payment button implementation too, if you don't want to do it via webhooks for some reason.`;
 
         return message;
     }

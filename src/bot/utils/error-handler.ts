@@ -89,7 +89,11 @@ export class ErrorHandler {
         context: ErrorContext = {},
         sessionFields: string[] = []
     ): Promise<void> {
-        const errorMessage = this.formatErrorMessage(error);
+        // Use appropriate error formatting based on error type
+        const errorMessage = errorType === ErrorType.API_ERROR 
+            ? this.formatApiErrorMessage(error)
+            : this.formatErrorMessage(error);
+            
         const logContext = this.buildLogContext(ctx, errorType, context);
 
         // Log the error with context
@@ -607,6 +611,22 @@ export class ErrorHandler {
             'invoiceId'
         ];
 
-        await this.handleConversationError(ctx, error, ErrorType.UNKNOWN_ERROR, context, sessionFields);
+        // Detect error type automatically
+        let errorType = ErrorType.UNKNOWN_ERROR;
+        
+        // Check if it's an API error (Axios error with response)
+        if (error && typeof error === 'object' && 'response' in error) {
+            errorType = ErrorType.API_ERROR;
+        }
+        // Check if it's a validation error (specific error messages)
+        else if (error instanceof Error) {
+            const message = error.message.toLowerCase();
+            if (message.includes('invalid') || message.includes('validation') || 
+                message.includes('check your input') || message.includes('try again')) {
+                errorType = ErrorType.VALIDATION_ERROR;
+            }
+        }
+
+        await this.handleConversationError(ctx, error, errorType, context, sessionFields);
     }
 } 

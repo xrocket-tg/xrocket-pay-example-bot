@@ -261,7 +261,7 @@ export async function handleWithdrawalAddressInput(ctx: BotContext): Promise<voi
         
         const address = ctx.message!.text!.trim();
         if (!validationService.validateWalletAddress(address)) {
-            throw new Error("Invalid address. Please try again.");
+            throw new Error("Invalid address format. Please check the address and try again.");
         }
         
         ctx.session.withdrawalAddress = address;
