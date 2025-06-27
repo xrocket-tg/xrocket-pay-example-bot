@@ -172,7 +172,7 @@ export async function handleTransferAmountInput(ctx: BotContext): Promise<void> 
         await messageService.editMessage(
             ctx,
             ctx.t('transfer-enter-recipient', {
-                userId: ctx.from?.id?.toString().replace(/\s/g, ''),
+                userId: ctx.from?.id?.toString().replace(/\s/g, '') || 'Unknown',
                 amount: amount,
                 emoji: currencyConfig.emoji,
                 name: currencyConfig.name
@@ -243,7 +243,7 @@ export async function handleTransferRecipientInput(ctx: BotContext): Promise<voi
         amount: formatCurrency(amount),
         emoji: currencyConfig.emoji,
         name: currencyConfig.name,
-        recipientId: recipientId.toString().replace(/\s/g, '')
+        recipientId: recipientId.toString().replace(/\s/g, '') || 'Unknown'
     });
 
     const keyboard = new InlineKeyboard()

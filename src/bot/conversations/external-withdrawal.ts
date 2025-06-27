@@ -250,7 +250,7 @@ export async function handleWithdrawalAmountInput(ctx: BotContext): Promise<void
                 name: currencyConfig.name,
                 fee: formatCurrency(fee),
                 totalRequired: formatCurrency(withdrawalValidation.totalRequired),
-                network: network
+                network: network || 'Unknown'
             }),
             new InlineKeyboard()
         );

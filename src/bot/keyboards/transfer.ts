@@ -40,11 +40,16 @@ export function createTransfersKeyboard(transfers: UserTransfer[], totalTransfer
 
     // Add transfer buttons
     transfers.forEach((transfer, index) => {
-        const statusEmoji = transfer.status === 'completed' ? '✅' : transfer.status === 'failed' ? '❌' : '⏳';
+        const currencyConfig = CurrencyConverter.getConfig(transfer.currency as InternalCurrency);
         keyboard.text(
-            `${statusEmoji} ${transfer.amount} ${transfer.currency}`,
+            `${currencyConfig.emoji} ${formatCurrency(transfer.amount)} ${currencyConfig.name} → ${transfer.recipientTelegramId}`,
             `transfer_${transfer.id}`
         );
+        
+        // Add new row for each transfer (except last one)
+        if (index < transfers.length - 1) {
+            keyboard.row();
+        }
     });
 
     // Add pagination

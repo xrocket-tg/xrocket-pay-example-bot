@@ -174,60 +174,203 @@ The application uses the following entities:
 - Database logs are available via `docker compose logs mysql`
 - Nginx logs are available via `docker compose logs nginx`
 
-## Security Features
+## Production Readiness
 
-- Rate limiting on API endpoints
-- Input validation and sanitization
-- SQL injection protection via TypeORM
-- XSS protection headers
-- CSRF protection
-- Secure session management
-- Resource limits and health checks
-- MySQL not exposed externally
+Before deploying this bot to a production environment, consider the following important recommendations:
 
-## Troubleshooting
+### 1. Use Webhooks Instead of Long Polling
 
-### Common Issues
+**Current State**: This demo bot uses long polling for receiving Telegram updates, which is suitable for development and testing.
 
-1. **Database connection failed**:
-   - Check if MySQL container is running: `docker compose ps`
-   - Verify environment variables in `.env`
-   - Check MySQL logs: `docker compose logs mysql`
+**Production Recommendation**: Switch to webhooks for better performance and reliability:
 
-2. **Bot not responding**:
-   - Verify `BOT_TOKEN` in `.env`
-   - Check bot logs: `docker compose logs app`
-   - Ensure webhook URL is accessible
+```typescript
+// In src/index.ts, replace the polling setup with webhook
+bot.api.setWebhook(`${WEBHOOK_URL}/telegram`, {
+  allowed_updates: ["message", "callback_query"],
+  secret_token: WEBHOOK_SECRET
+});
 
-3. **Webhook not working**:
-   - Verify `WEBHOOK_SECRET` matches xRocket Pay configuration
-   - Check if webhook URL is publicly accessible
-   - Review webhook logs in application
-
-4. **Docker Compose not found**:
-   - Ensure you have Docker Compose v2 installed
-   - Use `docker compose` (without hyphen) instead of `docker-compose`
-
-### Logs and Debugging
-
-```bash
-# View all logs
-docker compose logs
-
-# View specific service logs
-docker compose logs app
-docker compose logs mysql
-docker compose logs nginx
-
-# Follow logs in real-time
-docker compose logs -f
-
-# Check container status
-docker compose ps
-
-# Check resource usage
-docker stats
+// Add webhook endpoint
+app.post('/telegram', async (req, res) => {
+  try {
+    await bot.handleUpdate(req.body);
+    res.sendStatus(200);
+  } catch (error) {
+    logger.error('Webhook error:', error);
+    res.sendStatus(500);
+  }
+});
 ```
+
+**Benefits of Webhooks**:
+- **Real-time updates**: Instant message processing
+- **Better performance**: No constant polling overhead
+- **Resource efficiency**: Reduced server load
+- **Scalability**: Better for high-traffic bots
+- **Reliability**: More stable connection handling
+
+**Setup Requirements**:
+- Public HTTPS endpoint for webhook URL
+- Proper SSL certificate
+- Webhook secret for security
+- Load balancer configuration for high availability
+
+### 2. Implement Proper Database Migrations
+
+**Current State**: The demo uses `synchronize: true` in TypeORM configuration, which automatically creates/updates database schema.
+
+**Production Recommendation**: Use a proper migration strategy:
+
+```typescript
+// In src/config/database.ts, disable synchronize
+export const AppDataSource = new DataSource({
+  // ... other config
+  synchronize: false, // Disable in production
+  migrations: ["src/migrations/*.ts"],
+  migrationsRun: true,
+});
+```
+
+**Migration Strategy**:
+
+1. **Generate migrations**:
+```bash
+npm run typeorm migration:generate -- -n InitialSchema
+```
+
+2. **Run migrations**:
+```bash
+npm run typeorm migration:run
+```
+
+3. **Revert migrations** (if needed):
+```bash
+npm run typeorm migration:revert
+```
+
+**Benefits of Migrations**:
+- **Version control**: Track database schema changes
+- **Rollback capability**: Safely revert schema changes
+- **Team collaboration**: Consistent database state across environments
+- **Production safety**: No automatic schema modifications
+- **Audit trail**: Document all database changes
+
+**Migration Best Practices**:
+- Always test migrations on staging first
+- Use descriptive migration names
+- Include both up and down migrations
+- Backup database before running migrations
+- Run migrations during maintenance windows
+- Monitor migration execution in production
+
+### 3. Implement Proper Session Storage
+
+**Current State**: This demo bot uses in-memory session storage, which is suitable for development and single-instance deployments.
+
+**Production Recommendation**: Use persistent session storage for scalability and reliability:
+
+```typescript
+// Install required packages
+// npm install @grammyjs/storage-redis
+// npm install @grammyjs/storage-mongodb
+// npm install @grammyjs/storage-postgres
+
+// For Redis storage
+import { RedisAdapter } from "@grammyjs/storage-redis";
+import Redis from "ioredis";
+
+const redis = new Redis({
+  host: process.env.REDIS_HOST || "localhost",
+  port: parseInt(process.env.REDIS_PORT || "6379"),
+  password: process.env.REDIS_PASSWORD,
+  db: parseInt(process.env.REDIS_DB || "0"),
+});
+
+const sessionStorage = new RedisAdapter({
+  instance: redis,
+  ttl: 60 * 60 * 24 * 7, // 7 days
+});
+
+// For MongoDB storage
+import { MongoAdapter } from "@grammyjs/storage-mongodb";
+import { MongoClient } from "mongodb";
+
+const client = new MongoClient(process.env.MONGODB_URI || "mongodb://localhost:27017");
+const collection = client.db("bot").collection("sessions");
+
+const sessionStorage = new MongoAdapter({
+  collection,
+  ttl: 60 * 60 * 24 * 7, // 7 days
+});
+
+// Apply session storage to bot
+bot.use(session({
+  initial: () => ({ step: undefined }),
+  storage: sessionStorage,
+}));
+```
+
+**Benefits of Persistent Session Storage**:
+- **Scalability**: Support multiple bot instances
+- **Reliability**: Sessions survive server restarts
+- **Load Balancing**: Sessions shared across instances
+- **Data Persistence**: No session loss during deployments
+- **Monitoring**: Track session usage and patterns
+
+**Storage Options**:
+
+1. **Redis** (Recommended):
+   - Fast in-memory storage with persistence
+   - Built-in TTL support
+   - Excellent for high-traffic bots
+   - Easy clustering and replication
+
+2. **MongoDB**:
+   - Document-based storage
+   - Good for complex session data
+   - Built-in indexing and querying
+   - Flexible schema
+
+3. **PostgreSQL**:
+   - ACID compliance
+   - Good for relational session data
+   - Built-in backup and recovery
+   - Familiar SQL interface
+
+**Session Configuration Best Practices**:
+- Set appropriate TTL (Time To Live) for sessions
+- Implement session cleanup strategies
+- Monitor session storage performance
+- Use connection pooling for database storage
+- Implement session encryption for sensitive data
+- Regular backup of session data
+
+### 4. Additional Production Considerations
+
+**Environment Configuration**:
+- Use environment-specific configuration files
+- Implement proper secrets management
+- Use production-grade database (consider managed services)
+- Configure proper logging levels and rotation
+
+**Monitoring and Alerting**:
+- Implement health checks for all services
+- Set up monitoring for database performance
+- Configure alerting for critical errors
+- Monitor webhook delivery and processing
+
+**Security Enhancements**:
+- Implement rate limiting for webhook endpoints
+- Use proper authentication for admin endpoints
+- Configure firewall rules appropriately
+- Regular security updates and dependency scanning
+
+**Performance Optimization**:
+- Implement caching strategies
+- Optimize database queries
+- Use connection pooling
+- Consider horizontal scaling for high traffic
 
 ## Contributing
 
