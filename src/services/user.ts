@@ -1,6 +1,6 @@
 import { BotContext } from "../types/bot";
 import { AppDataSource } from "../config/database";
-import { User } from "../entities/user";
+import { User, SupportedLanguage } from "../entities/user";
 import { UserBalance } from "../entities/user-balance";
 import { UserInvoice } from "../entities/user-invoice";
 import { CurrencyConverter, InternalCurrency } from "../types/currency";
@@ -8,6 +8,8 @@ import { formatCurrency } from "../bot/utils/formatters";
 import { createMainMenuKeyboard } from "../bot/keyboards/main";
 import { EntityManager } from "typeorm";
 import { MessageService } from "../bot/services/message-service";
+import { LanguageService } from "./language";
+import logger from "../utils/logger";
 
 /**
  * Service for managing user-related operations
@@ -38,8 +40,31 @@ export class UserService {
         let user = await userRepo.findOne({ where: { telegramId: ctx.from.id } });
 
         if (!user) {
-            user = User.create(ctx.from.id, ctx.from.username || `user_${ctx.from.id}`);
+            // Create new user with detected language
+            const languageService = LanguageService.getInstance();
+            const detectedLanguage = languageService.detectUserLanguage(ctx);
+            
+            user = User.create(ctx.from.id, ctx.from.username || `user_${ctx.from.id}`, detectedLanguage);
             await userRepo.save(user);
+            
+            logger.info('[UserService] Created new user with language:', {
+                userId: user.id,
+                telegramId: user.telegramId,
+                language: detectedLanguage
+            });
+        } else if (!user.language) {
+            // Update existing user with detected language if not set
+            const languageService = LanguageService.getInstance();
+            const detectedLanguage = languageService.detectUserLanguage(ctx);
+            
+            user.language = detectedLanguage;
+            await userRepo.save(user);
+            
+            logger.info('[UserService] Updated existing user with language:', {
+                userId: user.id,
+                telegramId: user.telegramId,
+                language: detectedLanguage
+            });
         }
 
         return user;
@@ -53,6 +78,42 @@ export class UserService {
     public async getUserByTelegramId(telegramId: number): Promise<User | null> {
         const userRepo = AppDataSource.getRepository(User);
         return await userRepo.findOne({ where: { telegramId } });
+    }
+
+    /**
+     * Gets user language preference
+     * @param user - The user instance
+     * @returns The user's language preference or default language
+     */
+    public getUserLanguage(user: User): SupportedLanguage {
+        const languageService = LanguageService.getInstance();
+        return user.language || languageService.getDefaultLanguage();
+    }
+
+    /**
+     * Updates user language preference
+     * @param user - The user instance
+     * @param language - The new language preference
+     * @returns The updated user instance
+     */
+    public async updateUserLanguage(user: User, language: SupportedLanguage): Promise<User> {
+        const languageService = LanguageService.getInstance();
+        
+        if (!languageService.isSupportedLanguage(language)) {
+            throw new Error(`Unsupported language: ${language}`);
+        }
+
+        const userRepo = AppDataSource.getRepository(User);
+        user.language = language;
+        await userRepo.save(user);
+        
+        logger.info('[UserService] Updated user language:', {
+            userId: user.id,
+            telegramId: user.telegramId,
+            language
+        });
+        
+        return user;
     }
 
     /**
@@ -152,16 +213,21 @@ export class UserService {
     /**
      * Formats user balance into a display message
      * @param balances - Array of user balances
+     * @param ctx - The bot context for i18n
      * @returns Formatted balance message
      */
-    public formatBalanceMessage(balances: UserBalance[]): string {
-        let message = "💰 Your balance:\n";
+    public formatBalanceMessage(balances: UserBalance[], ctx: BotContext): string {
+        let message = ctx.t('balance-title') + '\n';
         if (balances.length === 0) {
-            message += "No balances yet";
+            message += ctx.t('balance-no-balance');
         } else {
             balances.forEach(balance => {
                 const currencyConfig = CurrencyConverter.getConfig(balance.coin as InternalCurrency);
-                message += `${currencyConfig.emoji} ${currencyConfig.name}: ${formatCurrency(balance.amount)}\n`;
+                message += ctx.t('balance-currency-format', {
+                    emoji: currencyConfig.emoji,
+                    name: currencyConfig.name,
+                    amount: formatCurrency(balance.amount)
+                }) + '\n';
             });
         }
         return message;
@@ -172,12 +238,14 @@ export class UserService {
      * @param user - The user instance
      * @param page - Page number (0-based)
      * @param pageSize - Number of items per page
+     * @param ctx - The bot context for i18n
      * @returns Object with invoices, pagination info, and message
      */
     public async getUserInvoicesWithPagination(
         user: User, 
         page: number = 0, 
-        pageSize: number = 5
+        pageSize: number = 5,
+        ctx?: BotContext
     ): Promise<{
         invoices: UserInvoice[];
         allInvoices: UserInvoice[];
@@ -197,11 +265,11 @@ export class UserService {
         const endIndex = startIndex + pageSize;
         const invoices = allInvoices.slice(startIndex, endIndex);
 
-        let message = "📋 Your invoices:\n\n";
-        if (allInvoices.length === 0) {
-            message += "No invoices yet";
+        let message = ctx ? ctx.t('invoices-title') + '\n\n' : '📋 Your invoices:\n\n';
+        if (invoices.length === 0) {
+            message += ctx ? ctx.t('error-no-invoices') : 'No invoices yet';
         } else {
-            message += `Showing ${startIndex + 1}-${Math.min(endIndex, allInvoices.length)} of ${allInvoices.length} invoices`;
+            message += ctx ? ctx.t('invoices-pagination', { start: startIndex + 1, end: Math.min(endIndex, allInvoices.length), total: allInvoices.length }) : `Showing ${startIndex + 1}-${Math.min(endIndex, allInvoices.length)} of ${allInvoices.length} invoices`;
         }
 
         return {
@@ -216,49 +284,60 @@ export class UserService {
     }
 
     /**
-     * Formats invoice detail message
+     * Formats invoice detail message (localized)
      * @param invoice - The invoice to format
+     * @param ctx - The bot context for i18n
      * @returns Formatted invoice detail message
      */
-    public formatInvoiceDetailMessage(invoice: UserInvoice): string {
+    public async formatInvoiceDetailMessage(invoice: UserInvoice, ctx: BotContext): Promise<string> {
         const currencyConfig = CurrencyConverter.getConfig(invoice.currency as InternalCurrency);
-        let status: string;
-        
+        let statusKey: string;
+        let statusEmoji: string;
         switch (invoice.status) {
             case 'paid':
-                status = '✅ Paid';
+                statusKey = 'status-paid';
+                statusEmoji = '✅';
                 break;
             case 'expired':
-                status = '❌ Expired';
+                statusKey = 'status-failed';
+                statusEmoji = '❌';
                 break;
             case 'active':
             default:
-                status = '⏳ Pending';
+                statusKey = 'status-pending';
+                statusEmoji = '⏳';
                 break;
         }
-        
-        let message = `📄 Invoice Details\n\n`;
-        message += `💰 Amount: ${formatCurrency(invoice.amount)}\n`;
-        
-        // Add Amount Received field if invoice is paid and has paymentAmountReceived
+
+        let paymentInfo = '';
+        if (invoice.paymentUrl && invoice.status !== 'paid' && invoice.status !== 'expired') {
+            paymentInfo = `\n${ctx.t('invoices-pay-with-xrocket')}:\n${invoice.paymentUrl}\n`;
+        }
+        paymentInfo += '\n' + ctx.t('invoices-payment-info');
+
+        // Add amount received and fee information for paid invoices
+        let amountReceivedInfo = '';
         if (invoice.status === 'paid' && invoice.paymentAmountReceived !== undefined) {
             const fee = parseFloat(invoice.amount.toString()) - invoice.paymentAmountReceived;
-            message += `💸 Amount Received: ${formatCurrency(invoice.paymentAmountReceived)}\n`;
-            message += `📊 Fee: ${formatCurrency(fee)}\n`;
-        }
-        
-        message += `📊 Status: ${status}\n`;
-        message += `🆔 Invoice ID: ${invoice.invoiceId}\n`;
-        message += `📅 Created: ${invoice.createdAt.toLocaleDateString()}\n\n`;
-
-        if (invoice.paymentUrl && invoice.status !== 'paid' && invoice.status !== 'expired') {
-            message += `💳 Pay with xRocket Pay:\n${invoice.paymentUrl}\n\n`;
+            amountReceivedInfo = ctx.t('invoices-amount-received-info', {
+                amountReceived: formatCurrency(invoice.paymentAmountReceived),
+                fee: formatCurrency(fee),
+                emoji: currencyConfig.emoji,
+                name: currencyConfig.name
+            });
         }
 
-        message += `🔧 <b>Payment Handling Options:</b>\n`;
-        message += `💡 Note: You have two ways to handle payment: set up webhooks or simply check invoice status (in a loop or with button). We handle it here via webhooks, but we have added check payment button implementation too, if you don't want to do it via webhooks for some reason.`;
-
-        return message;
+        return ctx.t('invoices-invoice-detail', {
+            amount: formatCurrency(invoice.amount),
+            emoji: currencyConfig.emoji,
+            name: currencyConfig.name,
+            statusEmoji,
+            status: ctx.t(statusKey),
+            invoiceId: invoice.invoiceId,
+            createdAt: invoice.createdAt.toLocaleDateString(),
+            paymentInfo,
+            amountReceivedInfo
+        });
     }
 
     /**
@@ -273,8 +352,8 @@ export class UserService {
 
         const messageService = MessageService.getInstance();
         const balances = await this.getUserBalances(user);
-        const message = this.formatBalanceMessage(balances);
+        const message = this.formatBalanceMessage(balances, ctx);
 
-        await messageService.editMessage(ctx, message, createMainMenuKeyboard());
+        await messageService.editMessage(ctx, message, createMainMenuKeyboard(ctx));
     }
 } 

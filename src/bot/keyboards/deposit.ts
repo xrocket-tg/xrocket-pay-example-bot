@@ -1,13 +1,19 @@
 import { InlineKeyboard } from "grammy";
-import { CURRENCIES } from "../../types/currency";
+import { CurrencyConverter } from "../../types/currency";
+import { BotContext } from "../../types/bot";
 
 /**
  * Creates inline keyboard for coin selection
  */
 export function createCoinSelectionKeyboard(): InlineKeyboard {
-    return new InlineKeyboard()
-        .text(`${CURRENCIES.TON.emoji} ${CURRENCIES.TON.name}`, "coin_TON")
-        .text(`${CURRENCIES.USDT.emoji} ${CURRENCIES.USDT.name}`, "coin_USDT")
-        .row()
-        .text(`${CURRENCIES.XROCK.emoji} ${CURRENCIES.XROCK.name}`, "coin_XROCK");
+    const keyboard = new InlineKeyboard();
+    const codes = CurrencyConverter.getSupportedInternalCodes();
+    codes.forEach((code, idx) => {
+        const config = CurrencyConverter.getConfig(code);
+        keyboard.text(`${config.emoji} ${config.name}`, `coin_${code}`);
+        if ((idx + 1) % 2 === 0 && idx !== codes.length - 1) {
+            keyboard.row();
+        }
+    });
+    return keyboard;
 } 

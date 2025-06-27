@@ -102,7 +102,7 @@ export class MessageService {
         } = {}
     ): Promise<void> {
         const { showMainMenu = true, parseMode } = options;
-        const keyboard = showMainMenu ? createMainMenuButton() : undefined;
+        const keyboard = showMainMenu ? createMainMenuButton(ctx) : undefined;
         const formattedMessage = `<b>❌ Error</b>\n\n${this.escapeHtml(errorMessage)}`;
         
         await this.editMessage(ctx, formattedMessage, keyboard, { parseMode });
@@ -125,7 +125,7 @@ export class MessageService {
         } = {}
     ): Promise<void> {
         const { parseMode, showMainMenu = false } = options;
-        const finalKeyboard = keyboard || (showMainMenu ? createMainMenuButton() : undefined);
+        const finalKeyboard = keyboard || (showMainMenu ? createMainMenuButton(ctx) : undefined);
         const formattedMessage = `<b>✅ Success</b>\n\n${this.escapeHtml(message)}`;
         
         await this.editMessage(ctx, formattedMessage, finalKeyboard, { parseMode });
@@ -148,7 +148,7 @@ export class MessageService {
         } = {}
     ): Promise<void> {
         const { parseMode, showMainMenu = false } = options;
-        const finalKeyboard = keyboard || (showMainMenu ? createMainMenuButton() : undefined);
+        const finalKeyboard = keyboard || (showMainMenu ? createMainMenuButton(ctx) : undefined);
         const formattedMessage = `<b>ℹ️ Info</b>\n\n${this.escapeHtml(message)}`;
         
         await this.editMessage(ctx, formattedMessage, finalKeyboard, { parseMode });
@@ -171,7 +171,7 @@ export class MessageService {
         } = {}
     ): Promise<void> {
         const { parseMode, showMainMenu = false } = options;
-        const finalKeyboard = keyboard || (showMainMenu ? createMainMenuButton() : undefined);
+        const finalKeyboard = keyboard || (showMainMenu ? createMainMenuButton(ctx) : undefined);
         const formattedMessage = `<b>⚠️ Warning</b>\n\n${this.escapeHtml(message)}`;
         
         await this.editMessage(ctx, formattedMessage, finalKeyboard, { parseMode });

@@ -2,22 +2,23 @@ import { InlineKeyboard } from "grammy";
 import { UserCheque } from "../../entities/user-cheque";
 import { CurrencyConverter, InternalCurrency } from "../../types/currency";
 import { formatCurrency } from "../utils/formatters";
+import { BotContext } from "../../types/bot";
 
 /**
  * Creates inline keyboard for cheque details
  */
-export function createChequeDetailKeyboard(cheque: UserCheque): InlineKeyboard {
+export function createChequeDetailKeyboard(cheque: UserCheque, ctx: BotContext): InlineKeyboard {
     const keyboard = new InlineKeyboard();
     
     // Add "Open Cheque" button if we have a link
     if (cheque.link) {
-        keyboard.url("🔗 Open Cheque", cheque.link);
+        keyboard.url(ctx.t('cheques-open-cheque'), cheque.link);
         keyboard.row();
     }
     
-    keyboard.text("🎫 My Cheques", "history_cheques");
+    keyboard.text(ctx.t('cheques-back-to-list'), "history_cheques");
     keyboard.row();
-    keyboard.text("🏠 Main Menu", "main_menu");
+    keyboard.text(ctx.t('buttons-main-menu'), "main_menu");
     
     return keyboard;
 }
@@ -25,9 +26,10 @@ export function createChequeDetailKeyboard(cheque: UserCheque): InlineKeyboard {
 /**
  * Creates keyboard for cheque list with pagination
  */
-export function createChequesKeyboard(cheques: UserCheque[], totalCount: number = 0, page: number = 0): InlineKeyboard {
+export function createChequesKeyboard(cheques: UserCheque[], totalCheques: number, page: number, ctx: BotContext): InlineKeyboard {
     const keyboard = new InlineKeyboard();
-    
+    const totalPages = Math.ceil(totalCheques / 5);
+
     // Add cheque buttons
     cheques.forEach((cheque, index) => {
         const currencyConfig = CurrencyConverter.getConfig(cheque.currency as InternalCurrency);
@@ -43,25 +45,27 @@ export function createChequesKeyboard(cheques: UserCheque[], totalCount: number 
     });
     
     // Add pagination controls if needed
-    const pageSize = 5;
-    const totalPages = Math.ceil(totalCount / pageSize);
     if (totalPages > 1) {
-        keyboard.row();
+        const navRow: any[] = [];
         
         if (page > 0) {
-            keyboard.text("⬅️ Previous", `cheques_page_${page - 1}`);
+            navRow.push({ text: ctx.t('pagination-previous'), callback_data: `cheques_page_${page - 1}` });
         }
         
-        keyboard.text(`📄 ${page + 1}/${totalPages}`, "cheques_page_info");
+        navRow.push({ text: `${page + 1}/${totalPages}`, callback_data: "cheques_page_info" });
         
         if (page < totalPages - 1) {
-            keyboard.text("Next ➡️", `cheques_page_${page + 1}`);
+            navRow.push({ text: ctx.t('pagination-next'), callback_data: `cheques_page_${page + 1}` });
         }
+        
+        keyboard.row(...navRow);
     }
     
     // Add back button
-    keyboard.row().text("📊 Back to Withdrawals", "my_withdrawals");
-    keyboard.row().text("🏠 Main Menu", "main_menu");
+    keyboard.row()
+        .text(ctx.t('withdrawals-back-to-list'), "my_withdrawals");
+    keyboard.row()
+        .text(ctx.t('buttons-main-menu'), "main_menu");
     
     return keyboard;
 }

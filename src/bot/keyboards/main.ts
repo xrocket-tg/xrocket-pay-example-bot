@@ -1,36 +1,37 @@
 import { InlineKeyboard } from "grammy";
+import { BotContext } from "../../types/bot";
 
 /**
  * Creates inline keyboard for main menu
  */
-export function createMainMenuKeyboard(): InlineKeyboard {
+export function createMainMenuKeyboard(ctx: BotContext): InlineKeyboard {
     return new InlineKeyboard()
-        .text("💰 Deposit", "deposit")
-        .text("💸 Withdraw", "withdraw")
+        .text(ctx.t('buttons-deposit'), "deposit")
+        .text(ctx.t('buttons-withdraw'), "withdraw")
         .row()
-        .text("📋 My Invoices", "my_invoices")
+        .text(ctx.t('buttons-invoices'), "my_invoices")
         .row()
-        .text("📊 My Withdrawals", "my_withdrawals");
+        .text(ctx.t('buttons-withdrawals'), "my_withdrawals");
 }
 
 /**
  * Creates a simple "Main Menu" button for error messages
  */
-export function createMainMenuButton(): InlineKeyboard {
+export function createMainMenuButton(ctx: BotContext): InlineKeyboard {
     return new InlineKeyboard()
-        .text("🏠 Main Menu", "main_menu");
+        .text(ctx.t('buttons-main-menu'), "main_menu");
 }
 
 /**
  * Creates inline keyboard for withdraw submenu
  */
-export function createWithdrawMenuKeyboard(): InlineKeyboard {
+export function createWithdrawMenuKeyboard(ctx: BotContext): InlineKeyboard {
     return new InlineKeyboard()
-        .text("🔁 Transfer", "withdraw_transfer")
+        .text(ctx.t('buttons-transfer'), "withdraw_transfer")
         .row()
-        .text("🧾 Cheque", "withdraw_multicheque")
+        .text(ctx.t('buttons-multicheque'), "withdraw_multicheque")
         .row()
-        .text("🌐 External Wallet", "withdraw_external")
+        .text(ctx.t('buttons-blockchain-transfer'), "withdraw_external")
         .row()
-        .text("🏠 Main Menu", "main_menu");
+        .text(ctx.t('buttons-main-menu'), "main_menu");
 } 

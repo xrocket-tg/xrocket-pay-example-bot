@@ -67,34 +67,16 @@ export async function handleMainMenu(ctx: BotContext): Promise<void> {
         
         const user = await userService.findOrCreateUser(ctx);
         const balances = await userService.getUserBalances(user);
-        const balanceMessage = userService.formatBalanceMessage(balances);
+        const balanceMessage = userService.formatBalanceMessage(balances, ctx);
 
         // Show welcome message with balance
-        const welcomeMessage = `🤖 <b>Demo Bot Information</b>
-
-This is a demo-bot to demonstrate abilities of xRocket Pay: payment API from @xRocket bot
-
-📚 <b>Resources:</b>
-• Source code: <a href="https://github.com/xrocket-tg/xrocket-pay-example-bot">GitHub Repository</a>
-• TypeScript SDK: <a href="https://www.npmjs.com/package/xrocket-pay-api-sdk">npm Package</a>
-• API Documentation: <a href="https://pay.xrocket.tg/api#/">Swagger UI</a>
-• API Schema: <a href="https://pay.xrocket.tg/api-json">OpenAPI JSON</a>
-
-⚠️ <b>Warning:</b> This bot is created for testing purposes. If you want to reuse this code for production, please do it on your own risk.
-
-🐛 <b>Support:</b>
-• Report issues: <a href="https://github.com/xrocket-tg/xrocket-pay-example-bot/issues">GitHub Issues</a>
-• Join chat: <a href="https://t.me/+mA9IoHSdvIRhZjFi">Telegram Community</a>
-
-----------------------
-
-${balanceMessage}`;
+        const welcomeMessage = ctx.t('main-welcome') + '\n\n' + balanceMessage;
 
         await messageService.editMessage(
             ctx,
             welcomeMessage,
-            createMainMenuKeyboard(),
-            { disableWebPagePreview: true }
+            createMainMenuKeyboard(ctx),
+            { disableWebPagePreview: true, parseMode: 'HTML' }
         );
     } catch (error) {
         await errorHandler.handleConversationFlowError(ctx, error, 'main_menu', 'button_click');
@@ -115,8 +97,8 @@ export async function handleWithdraw(ctx: BotContext): Promise<void> {
         
         await messageService.editMessage(
             ctx,
-            "💸 <b>Choose Withdrawal Option</b>\n\n🚀 <b>xRocket bot has 3 ways to send payments to your users:</b>\n\n💬 <b>1. Transfers</b>\nBest if you know telegram ID and user is already in @xRocket. They will receive payment and message right in bot. If you send too small amount, name of app will be changed to \"Some App\". This was done to prevent spam.\n\n🎫 <b>2. Cheques</b>\nIf you are not sure if user ever started xRocket, you can deliver them crypto using cheques. User will need to click by cheque link to activate it. There is also bonus, if you catch new users this way, they will become your refferals in @xRocket.\n\n🌐 <b>3. Direct Blockchain</b>\nIf you know only blockchain address of user, you can send them crypto directly. In this case, flat blockchain fee applies (same as when you withdraw from @xRocket).",
-            createWithdrawMenuKeyboard()
+            ctx.t('withdrawal-select-type'),
+            createWithdrawMenuKeyboard(ctx)
         );
     } catch (error) {
         await errorHandler.handleConversationFlowError(ctx, error, 'withdraw', 'button_click');
@@ -137,8 +119,8 @@ export async function handleMyWithdrawals(ctx: BotContext): Promise<void> {
         
         await messageService.editMessage(
             ctx,
-            "📊 My Withdrawals\n\nChoose the type of withdrawal history you want to view:",
-            createWithdrawalHistoryMenuKeyboard()
+            ctx.t('withdrawals-select-type'),
+            createWithdrawalHistoryMenuKeyboard(ctx)
         );
     } catch (error) {
         await errorHandler.handleConversationFlowError(ctx, error, 'my_withdrawals', 'button_click');
@@ -160,12 +142,12 @@ export async function handleInvoices(ctx: BotContext): Promise<void> {
         const userService = UserService.getInstance();
         const user = await userService.findOrCreateUser(ctx);
         
-        const result = await userService.getUserInvoicesWithPagination(user, 0, 5);
+        const result = await userService.getUserInvoicesWithPagination(user, 0, 5, ctx);
         
         await messageService.editMessage(
             ctx,
             result.message,
-            createInvoicesKeyboard(result.invoices, result.allInvoices.length, 0)
+            createInvoicesKeyboard(result.invoices, result.allInvoices.length, 0, ctx)
         );
     } catch (error) {
         await errorHandler.handleConversationFlowError(ctx, error, 'invoices', 'button_click');
@@ -193,12 +175,12 @@ export async function handleInvoicePagination(ctx: BotContext): Promise<void> {
         const userService = UserService.getInstance();
         const user = await userService.findOrCreateUser(ctx);
         
-        const result = await userService.getUserInvoicesWithPagination(user, page, 5);
+        const result = await userService.getUserInvoicesWithPagination(user, page, 5, ctx);
         
         await messageService.editMessage(
             ctx,
             result.message,
-            createInvoicesKeyboard(result.invoices, result.allInvoices.length, page)
+            createInvoicesKeyboard(result.invoices, result.allInvoices.length, page, ctx)
         );
     } catch (error) {
         await errorHandler.handleConversationFlowError(ctx, error, 'invoice_pagination', 'page_change');
@@ -249,7 +231,7 @@ export async function handleInvoiceDetail(ctx: BotContext): Promise<void> {
 
     if (!invoice) {
         logger.error('[HandleInvoiceDetail] Invoice not found for ID:', invoiceId);
-        await messageService.showError(ctx, "Invoice not found");
+        await messageService.showError(ctx, ctx.t('error-invoice-not-found'));
         return;
     }
 
@@ -298,17 +280,17 @@ export async function handleInvoiceDetail(ctx: BotContext): Promise<void> {
     });
     if (!updatedInvoice) {
         logger.error('[HandleInvoiceDetail] Updated invoice not found for ID:', invoiceId);
-        await messageService.showError(ctx, "Invoice not found");
+        await messageService.showError(ctx, ctx.t('error-invoice-not-found'));
         return;
     }
 
     const userService = UserService.getInstance();
-    const detailMessage = userService.formatInvoiceDetailMessage(updatedInvoice);
+    const detailMessage = await userService.formatInvoiceDetailMessage(updatedInvoice, ctx);
     
     await messageService.editMessage(
         ctx,
         detailMessage,
-        createInvoiceDetailKeyboard(updatedInvoice)
+        createInvoiceDetailKeyboard(updatedInvoice, ctx)
     );
 }
 
@@ -420,13 +402,13 @@ export async function handleCheckPayment(ctx: BotContext): Promise<void> {
             logger.info('[HandleCheckPayment] Getting updated balances');
             // Show updated balance
             const balances = await userService.getUserBalances(invoice.user);
-            const message = "✅ Payment confirmed! Your balance has been updated.\n\n" + userService.formatBalanceMessage(balances);
+            const message = "✅ Payment confirmed! Your balance has been updated.\n\n" + userService.formatBalanceMessage(balances, ctx);
             
             logger.info('[HandleCheckPayment] Sending success message');
             await messageService.editMessage(
                 ctx,
                 message,
-                createMainMenuKeyboard()
+                createMainMenuKeyboard(ctx)
             );
         } else {
             logger.info('[HandleCheckPayment] Payment not confirmed or already paid');
@@ -463,7 +445,7 @@ export async function handleDeleteInvoice(ctx: BotContext): Promise<void> {
     const invoice = await invoiceRepo.findOne({ where: { id: invoiceId } });
 
     if (!invoice) {
-        await messageService.showError(ctx, "Invoice not found");
+        await messageService.showError(ctx, ctx.t('error-invoice-not-found'));
         return;
     }
 
@@ -473,12 +455,12 @@ export async function handleDeleteInvoice(ctx: BotContext): Promise<void> {
     // Show updated invoice list
     const userService = UserService.getInstance();
     const user = await userService.findOrCreateUser(ctx);
-    const result = await userService.getUserInvoicesWithPagination(user, 0, 5);
+    const result = await userService.getUserInvoicesWithPagination(user, 0, 5, ctx);
     
     await messageService.editMessage(
         ctx,
-        "🗑️ Invoice deleted successfully!\n\n" + result.message,
-        createInvoicesKeyboard(result.invoices, result.allInvoices.length, 0)
+        ctx.t('invoices-deleted-successfully') + '\n\n' + result.message,
+        createInvoicesKeyboard(result.invoices, result.allInvoices.length, 0, ctx)
     );
 }
 
@@ -575,7 +557,7 @@ export async function handleWithdrawalDetail(ctx: BotContext): Promise<void> {
 
     if (!withdrawal) {
         logger.error('[HandleWithdrawalDetail] Withdrawal not found for ID:', withdrawalId);
-        await messageService.showError(ctx, "Withdrawal not found");
+        await messageService.showError(ctx, ctx.t('error-withdrawal-not-found'));
         return;
     }
 
@@ -620,7 +602,7 @@ export async function handleWithdrawalDetail(ctx: BotContext): Promise<void> {
     
     if (!updatedWithdrawal) {
         logger.error('[HandleWithdrawalDetail] Failed to reload withdrawal data');
-        await messageService.showError(ctx, "Error loading withdrawal data");
+        await messageService.showError(ctx, ctx.t('error-loading-withdrawal-data'));
         return;
     }
 
@@ -628,31 +610,31 @@ export async function handleWithdrawalDetail(ctx: BotContext): Promise<void> {
     const currencyConfig = CurrencyConverter.getConfig(updatedWithdrawal.currency as InternalCurrency);
     const statusEmoji = getWithdrawalStatusEmoji(updatedWithdrawal.status);
     
-    let detailMessage = `🌐 Withdrawal Details\n\n` +
-        `💰 Amount: ${formatCurrency(updatedWithdrawal.amount)} ${currencyConfig.emoji} ${currencyConfig.name}\n` +
-        `💸 Fee: ${formatCurrency(updatedWithdrawal.fee)} ${currencyConfig.name}\n` +
-        `💰 Total: ${formatCurrency(updatedWithdrawal.amount + updatedWithdrawal.fee)} ${currencyConfig.name}\n` +
-        `🌐 Network: ${updatedWithdrawal.network}\n` +
-        `🔗 Address: ${updatedWithdrawal.address}\n` +
-        `📊 Status: ${statusEmoji} ${updatedWithdrawal.status}\n` +
-        `📅 Created: ${formatDate(updatedWithdrawal.createdAt)}\n`;
+    let detailMessage = `${ctx.t('withdrawals-details-title')}\n\n` +
+        `${ctx.t('withdrawals-amount')} ${formatCurrency(updatedWithdrawal.amount)} ${currencyConfig.emoji} ${currencyConfig.name}\n` +
+        `${ctx.t('withdrawals-fee')} ${formatCurrency(updatedWithdrawal.fee)} ${currencyConfig.name}\n` +
+        `${ctx.t('withdrawals-total')} ${formatCurrency(updatedWithdrawal.amount + updatedWithdrawal.fee)} ${currencyConfig.name}\n` +
+        `${ctx.t('withdrawals-network')} ${updatedWithdrawal.network}\n` +
+        `${ctx.t('withdrawals-address')} ${updatedWithdrawal.address}\n` +
+        `${ctx.t('withdrawals-status')} ${statusEmoji} ${updatedWithdrawal.status}\n` +
+        `${ctx.t('withdrawals-created')} ${formatDate(updatedWithdrawal.createdAt)}\n`;
 
     if (updatedWithdrawal.txHash) {
-        detailMessage += `🔗 Transaction Hash: ${updatedWithdrawal.txHash}\n`;
+        detailMessage += `${ctx.t('withdrawals-tx-hash')} ${updatedWithdrawal.txHash}\n`;
     }
 
     if (updatedWithdrawal.error) {
-        detailMessage += `❌ Error: ${updatedWithdrawal.error}\n`;
+        detailMessage += `${ctx.t('withdrawals-error')} ${updatedWithdrawal.error}\n`;
     }
 
     if (updatedWithdrawal.comment) {
-        detailMessage += `💬 Comment: ${updatedWithdrawal.comment}\n`;
+        detailMessage += `${ctx.t('withdrawals-comment')} ${updatedWithdrawal.comment}\n`;
     }
 
     await messageService.editMessage(
         ctx,
         detailMessage,
-        createWithdrawalDetailKeyboard(updatedWithdrawal)
+        createWithdrawalDetailKeyboard(updatedWithdrawal, ctx)
     );
 }
 
@@ -717,32 +699,31 @@ export async function handleCheckWithdrawalStatus(ctx: BotContext): Promise<void
                     const currencyConfig = CurrencyConverter.getConfig(updatedWithdrawal.currency as InternalCurrency);
                     const statusEmoji = getWithdrawalStatusEmoji(newStatus);
                     
-                    let detailMessage = `🌐 Withdrawal Details\n\n` +
-                        `💰 Amount: ${formatCurrency(updatedWithdrawal.amount)} ${currencyConfig.emoji} ${currencyConfig.name}\n` +
-                        `💸 Fee: ${formatCurrency(updatedWithdrawal.fee)} ${currencyConfig.name}\n` +
-                        `💰 Total: ${formatCurrency(updatedWithdrawal.amount + updatedWithdrawal.fee)} ${currencyConfig.name}\n` +
-                        `🌐 Network: ${updatedWithdrawal.network}\n` +
-                        `🔗 Address: ${updatedWithdrawal.address}\n` +
-                        `📊 Status: ${statusEmoji} ${newStatus}\n` +
-                        `🆔 Withdrawal ID: ${updatedWithdrawal.withdrawalId}\n` +
-                        `📅 Created: ${formatDate(updatedWithdrawal.createdAt)}\n`;
+                    let detailMessage = `${ctx.t('withdrawals-details-title')}\n\n` +
+                        `${ctx.t('withdrawals-amount')} ${formatCurrency(updatedWithdrawal.amount)} ${currencyConfig.emoji} ${currencyConfig.name}\n` +
+                        `${ctx.t('withdrawals-fee')} ${formatCurrency(updatedWithdrawal.fee)} ${currencyConfig.name}\n` +
+                        `${ctx.t('withdrawals-total')} ${formatCurrency(updatedWithdrawal.amount + updatedWithdrawal.fee)} ${currencyConfig.name}\n` +
+                        `${ctx.t('withdrawals-network')} ${updatedWithdrawal.network}\n` +
+                        `${ctx.t('withdrawals-address')} ${updatedWithdrawal.address}\n` +
+                        `${ctx.t('withdrawals-status')} ${statusEmoji} ${newStatus}\n` +
+                        `${ctx.t('withdrawals-created')} ${formatDate(updatedWithdrawal.createdAt)}\n`;
 
                     if (updatedWithdrawal.txHash) {
-                        detailMessage += `🔗 Transaction Hash: ${updatedWithdrawal.txHash}\n`;
+                        detailMessage += `${ctx.t('withdrawals-tx-hash')} ${updatedWithdrawal.txHash}\n`;
                     }
 
                     if (updatedWithdrawal.error) {
-                        detailMessage += `❌ Error: ${updatedWithdrawal.error}\n`;
+                        detailMessage += `${ctx.t('withdrawals-error')} ${updatedWithdrawal.error}\n`;
                     }
 
                     if (updatedWithdrawal.comment) {
-                        detailMessage += `💬 Comment: ${updatedWithdrawal.comment}\n`;
+                        detailMessage += `${ctx.t('withdrawals-comment')} ${updatedWithdrawal.comment}\n`;
                     }
 
                     await messageService.editMessage(
                         ctx,
                         detailMessage,
-                        createWithdrawalDetailKeyboard(updatedWithdrawal)
+                        createWithdrawalDetailKeyboard(updatedWithdrawal, ctx)
                     );
                 }
                 
@@ -801,7 +782,7 @@ export async function handleHistoryTransfers(ctx: BotContext): Promise<void> {
     await messageService.editMessage(
         ctx,
         message,
-        createTransfersKeyboard(transfers, allTransfers.length, 0)
+        createTransfersKeyboard(transfers, allTransfers.length, 0, ctx)
     );
 }
 
@@ -842,7 +823,7 @@ export async function handleTransferPagination(ctx: BotContext): Promise<void> {
     await messageService.editMessage(
         ctx,
         message,
-        createTransfersKeyboard(transfers, allTransfers.length, page)
+        createTransfersKeyboard(transfers, allTransfers.length, page, ctx)
     );
 }
 
@@ -865,13 +846,13 @@ export async function handleHistoryCheques(ctx: BotContext): Promise<void> {
     const cheques = allCheques.slice(0, pageSize);
     
     const message = cheques.length > 0 
-        ? `🎫 My Cheques (${allCheques.length} total)\n\nSelect a cheque to view details:`
-        : "🎫 My Cheques\n\nNo cheques found.";
+        ? `${ctx.t('cheques-title')} (${allCheques.length} ${ctx.t('total')})\n\n${ctx.t('cheques-select-to-view')}`
+        : `${ctx.t('cheques-title')}\n\n${ctx.t('cheques-no-cheques')}`;
     
     await messageService.editMessage(
         ctx,
         message,
-        createChequesKeyboard(cheques, allCheques.length, 0)
+        createChequesKeyboard(cheques, allCheques.length, 0, ctx)
     );
 }
 
@@ -906,13 +887,13 @@ export async function handleChequePagination(ctx: BotContext): Promise<void> {
     const cheques = allCheques.slice(startIndex, startIndex + pageSize);
     
     const message = cheques.length > 0 
-        ? `🎫 My Cheques (${allCheques.length} total)\n\nSelect a cheque to view details:`
-        : "🎫 My Cheques\n\nNo cheques found.";
+        ? `${ctx.t('cheques-title')} (${allCheques.length} ${ctx.t('total')})\n\n${ctx.t('cheques-select-to-view')}`
+        : `${ctx.t('cheques-title')}\n\n${ctx.t('cheques-no-cheques')}`;
     
     await messageService.editMessage(
         ctx,
         message,
-        createChequesKeyboard(cheques, allCheques.length, page)
+        createChequesKeyboard(cheques, allCheques.length, page, ctx)
     );
 }
 
@@ -935,13 +916,13 @@ export async function handleHistoryWithdrawals(ctx: BotContext): Promise<void> {
     const withdrawals = allWithdrawals.slice(0, pageSize);
     
     const message = withdrawals.length > 0 
-        ? `🌐 My Blockchain Withdrawals (${allWithdrawals.length} total)\n\nSelect a withdrawal to view details:`
-        : "🌐 My Blockchain Withdrawals\n\nNo withdrawals found.";
+        ? `${ctx.t('withdrawals-blockchain-title')} (${allWithdrawals.length} ${ctx.t('total')})\n\n${ctx.t('withdrawals-select-to-view')}`
+        : `${ctx.t('withdrawals-blockchain-title')}\n\n${ctx.t('withdrawals-no-withdrawals')}`;
     
     await messageService.editMessage(
         ctx,
         message,
-        createWithdrawalsKeyboard(withdrawals, allWithdrawals.length, 0)
+        createWithdrawalsKeyboard(withdrawals, allWithdrawals.length, 0, ctx)
     );
 }
 
@@ -976,13 +957,13 @@ export async function handleWithdrawalPagination(ctx: BotContext): Promise<void>
     const withdrawals = allWithdrawals.slice(startIndex, startIndex + pageSize);
     
     const message = withdrawals.length > 0 
-        ? `🌐 My Blockchain Withdrawals (${allWithdrawals.length} total)\n\nSelect a withdrawal to view details:`
-        : "🌐 My Blockchain Withdrawals\n\nNo withdrawals found.";
+        ? `${ctx.t('withdrawals-blockchain-title')} (${allWithdrawals.length} ${ctx.t('total')})\n\n${ctx.t('withdrawals-select-to-view')}`
+        : `${ctx.t('withdrawals-blockchain-title')}\n\n${ctx.t('withdrawals-no-withdrawals')}`;
     
     await messageService.editMessage(
         ctx,
         message,
-        createWithdrawalsKeyboard(withdrawals, allWithdrawals.length, page)
+        createWithdrawalsKeyboard(withdrawals, allWithdrawals.length, page, ctx)
     );
 }
 
@@ -1023,7 +1004,7 @@ export async function handleTransferDetail(ctx: BotContext): Promise<void> {
 
     if (!transfer) {
         logger.error('[HandleTransferDetail] Transfer not found for ID:', transferId);
-        await messageService.showError(ctx, "Transfer not found");
+        await messageService.showError(ctx, ctx.t('error-transfer-not-found'));
         return;
     }
 
@@ -1039,7 +1020,7 @@ export async function handleTransferDetail(ctx: BotContext): Promise<void> {
     await messageService.editMessage(
         ctx,
         detailMessage,
-        createTransferDetailKeyboard(transfer)
+        createTransferDetailKeyboard(transfer, ctx)
     );
 }
 
@@ -1107,17 +1088,17 @@ export async function handleChequeDetail(ctx: BotContext): Promise<void> {
     const currencyConfig = CurrencyConverter.getConfig(cheque.currency as InternalCurrency);
     const statusEmoji = getChequeStatusEmoji(cheque.status);
     
-    let detailMessage = `🎫 Cheque Details\n\n` +
-        `💰 Amount: ${formatCurrency(cheque.amount)} ${currencyConfig.emoji} ${currencyConfig.name}\n` +
-        `👥 Users: ${cheque.usersNumber}\n` +
-        `📊 Status: ${statusEmoji} ${cheque.status}\n` +
-        `🆔 Cheque ID: ${cheque.chequeId}\n` +
-        `📅 Created: ${formatDate(cheque.createdAt)}\n`;
+    let detailMessage = `${ctx.t('cheques-details-title')}\n\n` +
+        `${ctx.t('cheques-amount')} ${formatCurrency(cheque.amount)} ${currencyConfig.emoji} ${currencyConfig.name}\n` +
+        `${ctx.t('cheques-users')} ${cheque.usersNumber}\n` +
+        `${ctx.t('cheques-status')} ${statusEmoji} ${cheque.status}\n` +
+        `${ctx.t('cheques-cheque-id')} ${cheque.chequeId}\n` +
+        `${ctx.t('cheques-created')} ${formatDate(cheque.createdAt)}\n`;
 
     await messageService.editMessage(
         ctx,
         detailMessage,
-        createChequeDetailKeyboard(cheque)
+        createChequeDetailKeyboard(cheque, ctx)
     );
 }
 

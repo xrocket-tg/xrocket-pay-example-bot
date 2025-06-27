@@ -2,6 +2,11 @@ import { Entity, PrimaryGeneratedColumn, Column, OneToMany } from "typeorm";
 import { UserBalance } from "./user-balance";
 
 /**
+ * Supported languages for the bot
+ */
+export type SupportedLanguage = 'en' | 'ru';
+
+/**
  * Represents a user in the system
  */
 @Entity({ name: "users" })
@@ -15,6 +20,9 @@ export class User {
     @Column({ name: "username" })
     public readonly username!: string;
 
+    @Column({ name: "language", type: 'varchar', length: 2, nullable: true })
+    public language?: SupportedLanguage;
+
     @Column({ name: "created_at", type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
     public readonly createdAt!: Date;
 
@@ -25,10 +33,11 @@ export class User {
      * Creates a new user instance
      * @param telegramId - The user's Telegram ID
      * @param username - The user's username
+     * @param language - The user's preferred language (optional)
      */
-    public static create(telegramId: number, username: string): User {
+    public static create(telegramId: number, username: string, language?: SupportedLanguage): User {
         const user = new User();
-        Object.assign(user, { telegramId, username });
+        Object.assign(user, { telegramId, username, language });
         return user;
     }
 } 

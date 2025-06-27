@@ -272,14 +272,24 @@ export class TransactionService {
             const transfer = UserTransfer.create(sender, parseInt(recipientTelegramId), null, amount, currency);
             const savedTransfer = await transferRepo.save(transfer);
 
-            // Execute transfer via xRocket Pay BEFORE committing transaction
+            // Update sender balance (subtract amount) within the same transaction
+            await this.updateUserBalanceInTransaction(
+                queryRunner,
+                sender,
+                currency as InternalCurrency,
+                -amount
+            );
+
+            // Commit transaction to release locks
+            await queryRunner.commitTransaction();
+            logger.info('[TransactionService] Transfer record created and balance updated');
+
+            // Execute transfer via xRocket Pay AFTER committing transaction
             logger.info('[TransactionService] Calling xRocketPay API for transfer:', savedTransfer.id);
             let result;
             try {
                 result = await this.xrocketPayService.createTransfer(savedTransfer);
             } catch (apiError) {
-                // If API call fails, rollback the transaction and throw the error
-                await queryRunner.rollbackTransaction();
                 this.errorHandler.logError(apiError, ErrorType.API_ERROR, {
                     conversation: 'transaction_service',
                     action: 'execute_transfer',
@@ -288,21 +298,25 @@ export class TransactionService {
                 throw apiError;
             }
 
-            // Update transfer record with transfer ID
-            await transferRepo.update(savedTransfer.id, { transferId: result.transferId });
+            // Update transfer record with transfer ID in a separate transaction
+            const updateQueryRunner = AppDataSource.createQueryRunner();
+            await updateQueryRunner.connect();
+            await updateQueryRunner.startTransaction();
 
-            // Update sender balance (subtract amount)
-            await this.updateUserBalanceInTransaction(
-                queryRunner,
-                sender,
-                currency as InternalCurrency,
-                -amount
-            );
+            try {
+                const updateTransferRepo = updateQueryRunner.manager.getRepository(UserTransfer);
+                await updateTransferRepo.update(savedTransfer.id, { transferId: result.transferId });
+                await updateQueryRunner.commitTransaction();
+                logger.info('[TransactionService] Transfer ID updated successfully');
+            } catch (updateError) {
+                await updateQueryRunner.rollbackTransaction();
+                logger.error('[TransactionService] Failed to update transfer ID:', updateError);
+                // Don't throw here as the transfer was successful, just log the error
+            } finally {
+                await updateQueryRunner.release();
+            }
 
-            // Commit transaction only after API call succeeds
-            await queryRunner.commitTransaction();
-
-            // Refresh the transfer object to get the updated fields
+            // Get the updated transfer object
             const updatedTransfer = await AppDataSource.getRepository(UserTransfer).findOne({
                 where: { id: savedTransfer.id }
             });
@@ -368,7 +382,7 @@ export class TransactionService {
             const withdrawal = UserWithdrawal.create(user, amount, currency, fee, network as WithdrawalNetwork, address);
             const savedWithdrawal = await withdrawalRepo.save(withdrawal);
 
-            // Update user balance (subtract amount)
+            // Update user balance (subtract amount) within the same transaction
             await this.updateUserBalanceInTransaction(
                 queryRunner,
                 user,
@@ -376,14 +390,16 @@ export class TransactionService {
                 -amount
             );
 
-            // Execute withdrawal via xRocket Pay BEFORE committing transaction
+            // Commit transaction to release locks
+            await queryRunner.commitTransaction();
+            logger.info('[TransactionService] Withdrawal record created and balance updated');
+
+            // Execute withdrawal via xRocket Pay AFTER committing transaction
             logger.info('[TransactionService] Calling xRocketPay API for withdrawal:', savedWithdrawal.id);
             let result;
             try {
                 result = await this.xrocketPayService.createWithdrawal(savedWithdrawal);
             } catch (apiError) {
-                // If API call fails, rollback the transaction and throw the error
-                await queryRunner.rollbackTransaction();
                 this.errorHandler.logError(apiError, ErrorType.API_ERROR, {
                     conversation: 'transaction_service',
                     action: 'execute_withdrawal',
@@ -392,16 +408,28 @@ export class TransactionService {
                 throw apiError;
             }
 
-            // Update withdrawal record with withdrawal ID and status
-            await withdrawalRepo.update(savedWithdrawal.id, {
-                withdrawalId: result.withdrawalId,
-                status: 'CREATED' // Initial status from xRocket Pay
-            });
+            // Update withdrawal record with withdrawal ID and status in a separate transaction
+            const updateQueryRunner = AppDataSource.createQueryRunner();
+            await updateQueryRunner.connect();
+            await updateQueryRunner.startTransaction();
 
-            // Commit transaction only after API call succeeds
-            await queryRunner.commitTransaction();
+            try {
+                const updateWithdrawalRepo = updateQueryRunner.manager.getRepository(UserWithdrawal);
+                await updateWithdrawalRepo.update(savedWithdrawal.id, {
+                    withdrawalId: result.withdrawalId,
+                    status: 'CREATED' // Initial status from xRocket Pay
+                });
+                await updateQueryRunner.commitTransaction();
+                logger.info('[TransactionService] Withdrawal ID and status updated successfully');
+            } catch (updateError) {
+                await updateQueryRunner.rollbackTransaction();
+                logger.error('[TransactionService] Failed to update withdrawal ID and status:', updateError);
+                // Don't throw here as the withdrawal was successful, just log the error
+            } finally {
+                await updateQueryRunner.release();
+            }
 
-            // Refresh the withdrawal object to get the updated fields
+            // Get the updated withdrawal object
             const updatedWithdrawal = await AppDataSource.getRepository(UserWithdrawal).findOne({
                 where: { id: savedWithdrawal.id }
             });

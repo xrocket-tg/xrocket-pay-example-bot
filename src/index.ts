@@ -1,8 +1,9 @@
 import express, { Request, Response } from 'express';
 import { Bot, session } from "grammy";
+import { I18n } from "@grammyjs/i18n";
 import { BotContext } from "./types/bot";
 import { AppDataSource } from "./config/database";
-import { handleStart } from "./bot/handlers/commands";
+import { handleStart, handleSetLang, handleSetLangCallback } from "./bot/handlers/commands";
 import { handleBalance, handleCheckPayment, handleInvoices, handleInvoiceDetail, handleInvoicePagination, handleDeleteInvoice, handleMainMenu, handleWithdraw, handleMyWithdrawals, handleWithdrawTransfer, handleWithdrawMulticheque, handleWithdrawExternal, handleOpenCheque, handleWithdrawalDetail, handleCheckWithdrawalStatus, handleHistoryTransfers, handleHistoryCheques, handleHistoryWithdrawals, handleTransferPagination, handleChequePagination, handleWithdrawalPagination, handleChequeDetail, handleTransferDetail } from "./bot/handlers/callbacks";
 import { handleDepositFlow, handleCurrencySelection, handleAmountInput } from "./bot/conversations/deposit";
 import { handleTransferFlow, handleTransferCurrencySelection, handleTransferAmountInput, handleTransferRecipientInput, handleTransferConfirmation } from "./bot/conversations/transfer";
@@ -10,11 +11,13 @@ import { handleMultichequeCurrencySelection, handleMultichequeAmountInput, handl
 import { handleExternalWithdrawalFlow, handleWithdrawalCurrencySelection, handleWithdrawalAmountInput, handleWithdrawalNetworkSelection, handleWithdrawalAddressInput, handleWithdrawalConfirmation } from "./bot/conversations/external-withdrawal";
 import { WebhookService } from "./services/webhook";
 import { ErrorHandler, ErrorType } from "./bot/utils/error-handler";
+import { UserService } from "./services/user";
 import * as dotenv from 'dotenv';
 
 dotenv.config();
 
 const errorHandler = ErrorHandler.getInstance();
+const userService = UserService.getInstance();
 
 /**
  * Creates a new bot instance
@@ -24,8 +27,40 @@ const bot = new Bot<BotContext>(process.env.BOT_TOKEN || "");
 // Session middleware
 bot.use(session({ initial: () => ({}) }));
 
+// i18n middleware for internationalization
+bot.use(new I18n({
+    defaultLocale: "en",
+    directory: "locales",
+    useSession: true,
+    fluentBundleOptions: {
+        useIsolating: false
+    }
+}));
+
+// Middleware to set user language based on database preference
+bot.use(async (ctx, next) => {
+    try {
+        if (ctx.from) {
+            const user = await userService.findOrCreateUser(ctx);
+            const userLanguage = userService.getUserLanguage(user);
+            
+            // Set the locale for this user
+            ctx.i18n.setLocale(userLanguage);
+            
+            console.log(`[i18n] Set locale for user ${ctx.from.id}: ${userLanguage}`);
+        }
+    } catch (error) {
+        console.error('[i18n] Error setting user language:', error);
+        // Fallback to default locale
+        ctx.i18n.setLocale("en");
+    }
+    
+    await next();
+});
+
 // Register command handlers
 bot.command("start", handleStart);
+bot.command("setlang", handleSetLang);
 
 // Register callback handlers
 bot.callbackQuery("deposit", handleDepositFlow);
@@ -72,6 +107,9 @@ bot.callbackQuery(/^cheques_page_/, handleChequePagination);
 bot.callbackQuery(/^withdrawals_page_/, handleWithdrawalPagination);
 bot.callbackQuery(/^cheque_/, handleChequeDetail);
 bot.callbackQuery(/^transfer_detail_/, handleTransferDetail);
+
+bot.callbackQuery("setlang_en", handleSetLangCallback);
+bot.callbackQuery("setlang_ru", handleSetLangCallback);
 
 bot.on("message:text", async (ctx) => {
     // Handle amount input for deposit flow

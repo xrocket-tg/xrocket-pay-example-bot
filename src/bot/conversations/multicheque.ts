@@ -56,7 +56,7 @@ export async function handleMultichequeFlow(ctx: BotContext): Promise<void> {
         logger.info('[Multicheque] Showing currency selection');
         await messageService.editMessage(
             ctx,
-            "🎫 Choose currency for your cheque:",
+            ctx.t('multicheque-select-currency'),
             createMultichequeCurrencyKeyboard()
         );
     } catch (error) {
@@ -108,7 +108,10 @@ export async function handleMultichequeCurrencySelection(ctx: BotContext): Promi
         const currencyConfig = CurrencyConverter.getConfig(selectedCoin);
         await messageService.editMessage(
             ctx,
-            `💰 Enter amount for your cheque:\n\nCurrency: ${currencyConfig.emoji} ${currencyConfig.name}`,
+            ctx.t('multicheque-enter-amount', {
+                emoji: currencyConfig.emoji,
+                name: currencyConfig.name
+            }),
             new InlineKeyboard()
         );
     } catch (error) {
@@ -162,14 +165,16 @@ export async function handleMultichequeAmountInput(ctx: BotContext): Promise<voi
         // Show confirmation
         logger.info('[Multicheque] Showing confirmation');
         const currencyConfig = CurrencyConverter.getConfig(selectedCoin);
-        const confirmationMessage = `🎫 Cheque Confirmation\n\n` +
-            `💰 Amount: ${amount} ${currencyConfig.emoji} ${currencyConfig.name}\n\n` +
-            `Are you sure you want to create this cheque?`;
+        const confirmationMessage = ctx.t('multicheque-confirm-multicheque', {
+            amount: formatCurrency(amount),
+            emoji: currencyConfig.emoji,
+            name: currencyConfig.name
+        });
 
         const keyboard = new InlineKeyboard()
-            .text("✅ Create Cheque", "confirm_multicheque")
+            .text(ctx.t('buttons-confirm'), "confirm_multicheque")
             .row()
-            .text("❌ Cancel", "main_menu");
+            .text(ctx.t('buttons-cancel'), "main_menu");
 
         await messageService.editMessage(ctx, confirmationMessage, keyboard);
     } catch (error) {
@@ -240,12 +245,15 @@ export async function handleMultichequeConfirmation(ctx: BotContext): Promise<vo
         // Show success message
         logger.info('[Multicheque] Showing success message');
         const currencyConfig = CurrencyConverter.getConfig(selectedCoin);
-        const successMessage = `✅ Cheque created successfully!\n\n` +
-            `💰 Amount: ${formatCurrency(amount)} ${currencyConfig.emoji} ${currencyConfig.name}\n` +
-            `🆔 Cheque ID: ${chequeId}\n` +
-            `🔗 Cheque URL: ${link}`;
+        const successMessage = ctx.t('multicheque-multicheque-success', {
+            amount: formatCurrency(amount),
+            emoji: currencyConfig.emoji,
+            name: currencyConfig.name,
+            chequeId: chequeId,
+            link: link
+        });
 
-        await messageService.showSuccess(ctx, successMessage, createChequeDetailKeyboard(updatedCheque));
+        await messageService.editMessage(ctx, successMessage, createChequeDetailKeyboard(updatedCheque, ctx));
         logger.info('[Multicheque] Multicheque flow completed');
     } catch (error) {
         await errorHandler.handleConversationFlowError(ctx, error, 'multicheque', 'confirmation');

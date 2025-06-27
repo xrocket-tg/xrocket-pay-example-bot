@@ -527,7 +527,7 @@ export class ErrorHandler {
     ): Promise<void> {
         try {
             // Always show simple main menu button with error messages
-            const keyboard = createMainMenuButton();
+            const keyboard = createMainMenuButton(ctx);
             
             // Determine if we should edit message or send new message
             if (ctx.callbackQuery?.message) {

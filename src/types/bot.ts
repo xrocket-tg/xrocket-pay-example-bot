@@ -1,5 +1,6 @@
 import { Context, SessionFlavor } from "grammy";
 import { ConversationFlavor } from "@grammyjs/conversations";
+import { I18nFlavor } from "@grammyjs/i18n";
 import { InternalCurrency } from "./currency";
 
 /**
@@ -28,6 +29,6 @@ export interface SessionData {
 export type BaseContext = Context & SessionFlavor<SessionData>;
 
 /**
- * Bot context type with session data and conversation support (for outside middleware)
+ * Bot context type with session data, conversation support, and i18n support
  */
-export type BotContext = BaseContext & ConversationFlavor; 
+export type BotContext = BaseContext & ConversationFlavor & I18nFlavor; 

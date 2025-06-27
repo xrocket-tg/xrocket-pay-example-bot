@@ -7,6 +7,9 @@ import { createMainMenuKeyboard } from "../keyboards/main";
 import { ErrorHandler, ErrorType } from "../utils/error-handler";
 import { MessageService } from "../services/message-service";
 import logger from '../../utils/logger';
+import { createLanguageKeyboard } from "../keyboards/lang";
+import { LocaleService } from "../../services/locale";
+import { SupportedLanguage } from "../../entities/user";
 
 const errorHandler = ErrorHandler.getInstance();
 
@@ -34,8 +37,8 @@ export async function handleStart(ctx: BotContext): Promise<void> {
 
             if (invoice) {
                 // Show invoice details
-                const message = userService.formatInvoiceDetailMessage(invoice);
-                await messageService.editMessage(ctx, message, createInvoiceDetailKeyboard(invoice));
+                const message = await userService.formatInvoiceDetailMessage(invoice, ctx);
+                await messageService.editMessage(ctx, message, createInvoiceDetailKeyboard(invoice, ctx));
                 return;
             }
         } catch (error) {
@@ -49,31 +52,42 @@ export async function handleStart(ctx: BotContext): Promise<void> {
     
     // Get balance and combine with welcome message
     const balances = await userService.getUserBalances(user);
-    const balanceMessage = userService.formatBalanceMessage(balances);
+    const balanceMessage = userService.formatBalanceMessage(balances, ctx);
     
-    const welcomeMessage = `🤖 <b>Demo Bot Information</b>
-
-This is a demo-bot to demonstrate abilities of xRocket Pay: payment API from @xRocket bot
-
-📚 <b>Resources:</b>
-• Source code: <a href="https://github.com/xrocket-tg/xrocket-pay-example-bot">GitHub Repository</a>
-• TypeScript SDK: <a href="https://www.npmjs.com/package/xrocket-pay-api-sdk">npm Package</a>
-• API Documentation: <a href="https://pay.xrocket.tg/api#/">Swagger UI</a>
-• API Schema: <a href="https://pay.xrocket.tg/api-json">OpenAPI JSON</a>
-
-⚠️ <b>Warning:</b> This bot is created for testing purposes. If you want to reuse this code for production, please do it on your own risk.
-
-🐛 <b>Support:</b>
-• Report issues: <a href="https://github.com/xrocket-tg/xrocket-pay-example-bot/issues">GitHub Issues</a>
-• Join chat: <a href="https://t.me/+mA9IoHSdvIRhZjFi">Telegram Community</a>
-
-----------------------
-
-${balanceMessage}`;
+    const welcomeMessage = ctx.t('main-welcome') + '\n\n' + balanceMessage;
     
     await ctx.reply(welcomeMessage, { 
         parse_mode: "HTML", 
         disable_web_page_preview: true,
-        reply_markup: createMainMenuKeyboard()
-    });
+        reply_markup: createMainMenuKeyboard(ctx)
+    } as any);
+}
+
+/**
+ * Handles the /setlang command
+ */
+export async function handleSetLang(ctx: BotContext): Promise<void> {
+    await ctx.reply(
+        ctx.t('language-select'),
+        { reply_markup: createLanguageKeyboard() }
+    );
+}
+
+/**
+ * Handles language selection via inline button
+ */
+export async function handleSetLangCallback(ctx: BotContext): Promise<void> {
+    const localeService = LocaleService.getInstance();
+    let lang: SupportedLanguage = 'en';
+    if (ctx.callbackQuery?.data === 'setlang_ru') lang = 'ru';
+    if (ctx.callbackQuery?.data === 'setlang_en') lang = 'en';
+
+    await localeService.updateUserLanguage(ctx, lang);
+    ctx.i18n.setLocale(lang);
+
+    await ctx.answerCallbackQuery();
+    await ctx.reply(
+        ctx.t('language-changed'),
+        { reply_markup: createLanguageKeyboard() }
+    );
 } 

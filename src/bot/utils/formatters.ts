@@ -19,11 +19,12 @@ export function formatNumberClean(num: number | string, maxDecimals: number = 8)
         return '0';
     }
     
-    // Convert to string with maximum precision
+    // Convert to string with maximum precision, explicitly using dots
     const numStr = parsedNum.toFixed(maxDecimals);
     
     // Remove trailing zeros and decimal point if all zeros
-    return numStr.replace(/\.?0+$/, '');
+    // Ensure we use dots for decimal separators
+    return numStr.replace(/\.?0+$/, '').replace(',', '.');
 }
 
 /**
@@ -32,7 +33,9 @@ export function formatNumberClean(num: number | string, maxDecimals: number = 8)
  * @returns Formatted currency string
  */
 export function formatCurrency(num: number | string): string {
-    return formatNumberClean(num, 8);
+    const formatted = formatNumberClean(num, 8);
+    // Ensure we use dots for decimal separators regardless of locale
+    return formatted.replace(',', '.');
 }
 
 /**

@@ -46,8 +46,8 @@ export async function handleTransferFlow(ctx: BotContext): Promise<void> {
         logger.info('[Transfer] Showing currency selection');
         await messageService.editMessage(
             ctx,
-            "💱 Select currency for transfer:",
-            createTransferCurrencyKeyboard()
+            ctx.t('transfer-select-currency'),
+            createTransferCurrencyKeyboard(ctx)
         );
 
         // Answer the callback query to remove loading state
@@ -95,7 +95,10 @@ export async function handleTransferCurrencySelection(ctx: BotContext): Promise<
         logger.info('[Transfer] Asking for amount');
         await messageService.editMessage(
             ctx,
-            `💵 Enter amount to transfer in ${currencyConfig.emoji} ${currencyConfig.name}:`,
+            ctx.t('transfer-enter-amount', {
+                emoji: currencyConfig.emoji,
+                name: currencyConfig.name
+            }),
             new InlineKeyboard()
         );
     } catch (error) {
@@ -168,7 +171,12 @@ export async function handleTransferAmountInput(ctx: BotContext): Promise<void> 
         });
         await messageService.editMessage(
             ctx,
-            `👤 Enter recipient's Telegram ID:\n\nYour Telegram ID: ${ctx.from?.id}\n\nAmount: ${amount} ${currencyConfig.emoji} ${currencyConfig.name}`,
+            ctx.t('transfer-enter-recipient', {
+                userId: ctx.from?.id?.toString().replace(/\s/g, ''),
+                amount: amount,
+                emoji: currencyConfig.emoji,
+                name: currencyConfig.name
+            }),
             new InlineKeyboard()
         );
     } catch (error) {
@@ -195,7 +203,7 @@ export async function handleTransferRecipientInput(ctx: BotContext): Promise<voi
     if (!recipientId) {
         await messageService.showError(
             ctx,
-            "Invalid Telegram ID. Please enter a valid number."
+            ctx.t('errors-invalid-telegram-id')
         );
         return;
     }
@@ -204,7 +212,7 @@ export async function handleTransferRecipientInput(ctx: BotContext): Promise<voi
         logger.error('[Transfer] Missing session data');
         await messageService.showError(
             ctx,
-            "Session data missing. Please start over."
+            ctx.t('errors-session-missing')
         );
         return;
     }
@@ -231,14 +239,16 @@ export async function handleTransferRecipientInput(ctx: BotContext): Promise<voi
     // Show confirmation
     logger.info('[Transfer] Showing confirmation');
     const currencyConfig = CurrencyConverter.getConfig(selectedCoin);
-    const confirmationMessage = `📋 Transfer Confirmation\n\n` +
-        `💰 Amount: ${formatCurrency(amount)} ${currencyConfig.emoji} ${currencyConfig.name}\n` +
-        `👤 Recipient ID: ${recipientId}\n\n` +
-        `Please confirm the transfer:`;
+    const confirmationMessage = ctx.t('transfer-confirm-transfer', {
+        amount: formatCurrency(amount),
+        emoji: currencyConfig.emoji,
+        name: currencyConfig.name,
+        recipientId: recipientId.toString().replace(/\s/g, '')
+    });
 
     const keyboard = new InlineKeyboard()
-        .text("✅ Confirm Transfer", "confirm_transfer")
-        .text("❌ Cancel", "main_menu");
+        .text(ctx.t('buttons-confirm'), "confirm_transfer")
+        .text(ctx.t('buttons-cancel'), "main_menu");
 
     await messageService.editMessage(ctx, confirmationMessage, keyboard);
 }
@@ -295,12 +305,15 @@ export async function handleTransferConfirmation(ctx: BotContext): Promise<void>
         // Show success message
         logger.info('[Transfer] Showing success message');
         const currencyConfig = CurrencyConverter.getConfig(selectedCoin);
-        const successMessage = `✅ Transfer completed successfully!\n\n` +
-            `💰 Amount: ${formatCurrency(amount)} ${currencyConfig.emoji} ${currencyConfig.name}\n` +
-            `👤 Recipient ID: ${recipientId}\n` +
-            `🆔 Transfer ID: ${transfer.id}`;
+        const successMessage = ctx.t('transfer-transfer-success', {
+            amount: formatCurrency(amount),
+            emoji: currencyConfig.emoji,
+            name: currencyConfig.name,
+            recipientId: recipientId.toString().replace(/\s/g, ''),
+            transferId: transfer.id
+        });
 
-        await messageService.showSuccess(ctx, successMessage, createMainMenuKeyboard());
+        await messageService.editMessage(ctx, successMessage, createMainMenuKeyboard(ctx));
         logger.info('[Transfer] Transfer flow completed');
     } catch (error) {
         await errorHandler.handleConversationFlowError(ctx, error, 'transfer', 'confirmation');

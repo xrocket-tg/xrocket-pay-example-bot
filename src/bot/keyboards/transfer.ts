@@ -2,11 +2,12 @@ import { InlineKeyboard } from "grammy";
 import { UserTransfer } from "../../entities/user-transfer";
 import { CurrencyConverter, InternalCurrency } from "../../types/currency";
 import { formatCurrency } from "../utils/formatters";
+import { BotContext } from "../../types/bot";
 
 /**
  * Creates keyboard for transfer currency selection
  */
-export function createTransferCurrencyKeyboard(): InlineKeyboard {
+export function createTransferCurrencyKeyboard(ctx: BotContext): InlineKeyboard {
     const keyboard = new InlineKeyboard();
     const currencies = CurrencyConverter.getSupportedInternalCodes();
     
@@ -25,7 +26,7 @@ export function createTransferCurrencyKeyboard(): InlineKeyboard {
     });
     
     // Add back button
-    keyboard.row().text("🏠 Main Menu", "main_menu");
+    keyboard.row().text(ctx.t('buttons-main-menu'), "main_menu");
     
     return keyboard;
 }
@@ -33,55 +34,52 @@ export function createTransferCurrencyKeyboard(): InlineKeyboard {
 /**
  * Creates keyboard for transfer list with pagination
  */
-export function createTransfersKeyboard(transfers: UserTransfer[], totalCount: number = 0, page: number = 0): InlineKeyboard {
+export function createTransfersKeyboard(transfers: UserTransfer[], totalTransfers: number, page: number, ctx: BotContext): InlineKeyboard {
     const keyboard = new InlineKeyboard();
-    
+    const totalPages = Math.ceil(totalTransfers / 5);
+
     // Add transfer buttons
     transfers.forEach((transfer, index) => {
-        const currencyConfig = CurrencyConverter.getConfig(transfer.currency as InternalCurrency);
-        const buttonText = `🔄 ${currencyConfig.emoji} ${formatCurrency(transfer.amount)} ${currencyConfig.name} → ${transfer.recipientTelegramId} (ID: ${transfer.id})`;
-        
-        keyboard.text(buttonText, `transfer_detail_${transfer.id}`);
-        
-        // Add new row for each transfer (except last one)
-        if (index < transfers.length - 1) {
-            keyboard.row();
-        }
+        const statusEmoji = transfer.status === 'completed' ? '✅' : transfer.status === 'failed' ? '❌' : '⏳';
+        keyboard.text(
+            `${statusEmoji} ${transfer.amount} ${transfer.currency}`,
+            `transfer_${transfer.id}`
+        );
     });
-    
-    // Add pagination controls if needed
-    const pageSize = 5;
-    const totalPages = Math.ceil(totalCount / pageSize);
+
+    // Add pagination
     if (totalPages > 1) {
-        keyboard.row();
+        const navRow: any[] = [];
         
         if (page > 0) {
-            keyboard.text("⬅️ Previous", `transfers_page_${page - 1}`);
+            navRow.push({ text: ctx.t('pagination-previous'), callback_data: `transfers_page_${page - 1}` });
         }
         
-        keyboard.text(`📄 ${page + 1}/${totalPages}`, "transfers_page_info");
+        navRow.push({ text: `${page + 1}/${totalPages}`, callback_data: "transfers_page_info" });
         
         if (page < totalPages - 1) {
-            keyboard.text("Next ➡️", `transfers_page_${page + 1}`);
+            navRow.push({ text: ctx.t('pagination-next'), callback_data: `transfers_page_${page + 1}` });
         }
+        
+        keyboard.row(...navRow);
     }
-    
-    // Add back button
-    keyboard.row().text("📊 Back to Withdrawals", "my_withdrawals");
-    keyboard.row().text("🏠 Main Menu", "main_menu");
-    
+
+    keyboard.row()
+        .text(ctx.t('withdrawals-back-to-list'), "my_withdrawals")
+        .text(ctx.t('buttons-main-menu'), "main_menu");
     return keyboard;
 }
 
 /**
  * Creates keyboard for transfer detail view
  */
-export function createTransferDetailKeyboard(transfer: UserTransfer): InlineKeyboard {
+export function createTransferDetailKeyboard(transfer: UserTransfer, ctx: BotContext): InlineKeyboard {
     const keyboard = new InlineKeyboard();
-    
-    keyboard.text("📊 Back to Transfers", "history_transfers");
-    keyboard.row();
-    keyboard.text("🏠 Main Menu", "main_menu");
-    
+
+    // Navigation
+    keyboard.row()
+        .text(ctx.t('transfers-back-to-list'), "history_transfers")
+        .text(ctx.t('buttons-main-menu'), "main_menu");
+
     return keyboard;
 } 

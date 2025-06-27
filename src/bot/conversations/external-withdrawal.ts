@@ -74,7 +74,7 @@ export async function handleExternalWithdrawalFlow(ctx: BotContext): Promise<voi
         ctx.session.withdrawalFee = undefined;
         await messageService.editMessage(
             ctx,
-            "💸 Choose currency to withdraw:",
+            ctx.t('withdrawal-currency-selection'),
             createWithdrawalCurrencyKeyboard()
         );
     } catch (error) {
@@ -113,7 +113,10 @@ export async function handleWithdrawalCurrencySelection(ctx: BotContext): Promis
         const networkKeyboard = await createWithdrawalNetworkKeyboard(selectedCoin);
         await messageService.editMessage(
             ctx,
-            `🌐 Choose network for ${currencyConfig.emoji} ${currencyConfig.name}:`,
+            ctx.t('withdrawal-network-selection', {
+                emoji: currencyConfig.emoji,
+                name: currencyConfig.name
+            }),
             networkKeyboard
         );
     } catch (error) {
@@ -188,10 +191,14 @@ export async function handleWithdrawalNetworkSelection(ctx: BotContext): Promise
         
         await messageService.editMessage(
             ctx,
-            `💰 Your ${currencyConfig.emoji} ${currencyConfig.name} balance: ${formatCurrency(currentBalance)}\n` +
-            `💸 Withdrawal fee (${network}): ${formatCurrency(fee)} ${currencyConfig.name}\n` +
-            `📊 Maximum withdrawal: ${formatCurrency(maxWithdrawal)} ${currencyConfig.name}\n\n` +
-            `💵 Enter amount to withdraw:`,
+            ctx.t('withdrawal-balance-info', {
+                emoji: currencyConfig.emoji,
+                name: currencyConfig.name,
+                balance: formatCurrency(currentBalance),
+                fee: formatCurrency(fee),
+                network: network,
+                maxWithdrawal: formatCurrency(maxWithdrawal)
+            }),
             new InlineKeyboard()
         );
     } catch (error) {
@@ -237,10 +244,14 @@ export async function handleWithdrawalAmountInput(ctx: BotContext): Promise<void
         const network = ctx.session.withdrawalNetwork;
         await messageService.editMessage(
             ctx,
-            `💸 Withdrawal amount: ${formatCurrency(amount)} ${currencyConfig.emoji} ${currencyConfig.name}\n` +
-            `💸 Fee: ${formatCurrency(fee)} ${currencyConfig.emoji} ${currencyConfig.name}\n` +
-            `💰 Total amount: ${formatCurrency(withdrawalValidation.totalRequired)} ${currencyConfig.emoji} ${currencyConfig.name}\n\n` +
-            `🔗 Enter the external wallet address for ${network}:`,
+            ctx.t('withdrawal-amount-info', {
+                amount: formatCurrency(amount),
+                emoji: currencyConfig.emoji,
+                name: currencyConfig.name,
+                fee: formatCurrency(fee),
+                totalRequired: formatCurrency(withdrawalValidation.totalRequired),
+                network: network
+            }),
             new InlineKeyboard()
         );
     } catch (error) {
@@ -280,17 +291,18 @@ export async function handleWithdrawalAddressInput(ctx: BotContext): Promise<voi
         
         await messageService.editMessage(
             ctx,
-            `⚠️ Please confirm your withdrawal:\n\n` +
-            `💰 Amount: ${formatCurrency(amount)} ${selectedCoin}\n` +
-            `💸 Fee: ${formatCurrency(fee)} ${selectedCoin}\n` +
-            `💰 Total: ${formatCurrency(totalAmount)} ${selectedCoin}\n` +
-            `🌐 Network: ${network}\n` +
-            `🔗 Address: ${address}\n\n` +
-            `Do you want to proceed?`,
+            ctx.t('withdrawal-confirmation', {
+                amount: formatCurrency(amount),
+                currency: selectedCoin,
+                fee: formatCurrency(fee),
+                total: formatCurrency(totalAmount),
+                network: network,
+                address: address
+            }),
             new InlineKeyboard()
-                .text('✅ Confirm', 'withdrawal_confirm')
+                .text(ctx.t('withdrawal-confirm-button'), 'withdrawal_confirm')
                 .row()
-                .text('❌ Cancel', 'main_menu')
+                .text(ctx.t('withdrawal-cancel-button'), 'main_menu')
         );
     } catch (error) {
         await errorHandler.handleConversationFlowError(ctx, error, 'external_withdrawal', 'address_input');
@@ -342,20 +354,24 @@ export async function handleWithdrawalConfirmation(ctx: BotContext): Promise<voi
         const currencyConfig = CurrencyConverter.getConfig(selectedCoin);
         const statusEmoji = getWithdrawalStatusEmoji(savedWithdrawal.status);
         
-        const detailMessage = `🌐 Withdrawal Details\n\n` +
-            `💰 Amount: ${formatCurrency(amount)} ${currencyConfig.emoji} ${currencyConfig.name}\n` +
-            `💸 Fee: ${formatCurrency(fee)} ${currencyConfig.emoji} ${currencyConfig.name}\n` +
-            `💰 Total: ${formatCurrency(amount + fee)} ${currencyConfig.emoji} ${currencyConfig.name}\n` +
-            `🌐 Network: ${network}\n` +
-            `🔗 Address: ${address}\n` +
-            `📊 Status: ${statusEmoji} ${savedWithdrawal.status}\n` +
-            `🆔 Withdrawal ID: ${savedWithdrawal.withdrawalId || 'Processing...'}\n` +
-            `📅 Created: ${formatDate(savedWithdrawal.createdAt)}`;
+        const detailMessage = ctx.t('withdrawal-details', {
+            amount: formatCurrency(amount),
+            emoji: currencyConfig.emoji,
+            name: currencyConfig.name,
+            fee: formatCurrency(fee),
+            total: formatCurrency(amount + fee),
+            network: network,
+            address: address,
+            statusEmoji: statusEmoji,
+            status: savedWithdrawal.status,
+            withdrawalId: savedWithdrawal.withdrawalId || 'Processing...',
+            createdAt: formatDate(savedWithdrawal.createdAt)
+        });
 
         await messageService.editMessage(
             ctx,
             detailMessage,
-            createWithdrawalDetailKeyboard(savedWithdrawal)
+            createWithdrawalDetailKeyboard(savedWithdrawal, ctx)
         );
 
         logger.info('[Withdrawal] Withdrawal flow completed successfully');
