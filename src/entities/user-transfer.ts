@@ -23,7 +23,7 @@ export class UserTransfer {
     @JoinColumn({ name: "sender_id" })
     public readonly sender!: User;
 
-    @Column({ name: "recipient_telegram_id" })
+    @Column({ name: "recipient_telegram_id", type: 'bigint' })
     public readonly recipientTelegramId!: number;
 
     @Column({ name: "recipient_username", nullable: true })

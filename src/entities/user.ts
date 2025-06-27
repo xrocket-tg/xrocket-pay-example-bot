@@ -14,7 +14,7 @@ export class User {
     @PrimaryGeneratedColumn()
     public readonly id!: number;
 
-    @Column({ name: "telegram_id" })
+    @Column({ name: "telegram_id", type: 'bigint' })
     public readonly telegramId!: number;
 
     @Column({ name: "username" })
